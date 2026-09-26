@@ -1,0 +1,75 @@
+### ============================================================================
+### 00 - Authentication & session bootstrap
+### ============================================================================
+### Every other file in http/ needs a valid PHPSESSID. Run this file first.
+###
+###   bWAPP password storage:  hash("sha1", $password)  -> login.php:36
+###   static credentials:      bee / bug                -> admin/settings.php
+###   (those same credentials are served unauthenticated on /admin/ - see 08-info-disclosure.http)
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### 1. Baseline - confirm the target is alive
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/login.php HTTP/1.1
+Host: localhost:8080
+Accept: text/html
+### Expected: 200 and a login form
+
+
+### ---------------------------------------------------------------------------
+### 2. LOGIN - grab the PHPSESSID from the Set-Cookie response header
+### ---------------------------------------------------------------------------
+### The submit button is named `form`, NOT `login_submit`, and the security
+### level is submitted in the same POST. Getting this wrong silently returns
+### the login page again with a 200, which is a common false-negative.
+###
+### Copy the PHPSESSID value into http-client.env as @session.
+POST {{baseUrl}}/login.php HTTP/1.1
+Host: localhost:8080
+Content-Type: application/x-www-form-urlencoded
+
+login=bee&password=bug&security_level=0&form=submit
+### Expected: 302 -> index.php, Set-Cookie: PHPSESSID=...
+
+
+### ---------------------------------------------------------------------------
+### 3. AUTHENTICATED BASELINE - prove the session works
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/portal.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Accept: text/html
+### Expected: 200, page shows "Welcome Bee" and the bug list
+
+
+### ---------------------------------------------------------------------------
+### 4. Read the current user's secret (no authorization check at all)
+###    BWAPP-AUTH-06 / A1 Broken Access Control
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/secret.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200 text/plain -> "Your secret: <the secret>"
+
+
+### ---------------------------------------------------------------------------
+### 5. Set the security level via the app's own endpoint
+###    Proves the "protection" is nothing but a cookie the client controls.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/security_level_set.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+security_level=0&form=submit
+### Expected: 302, Set-Cookie: security_level=0
+
+
+### ---------------------------------------------------------------------------
+### 6. Logout
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/logout.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 302 -> login.php

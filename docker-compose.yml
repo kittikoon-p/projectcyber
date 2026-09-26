@@ -1,0 +1,26 @@
+# Alternative to the `docker run` inside scripts/setup-bwapp.ps1.
+#
+#   docker compose up -d          # start the lab
+#   docker compose down           # throw it away
+#
+# Both routes produce the same container: name "bwapp", published on
+# 127.0.0.1:8080 only. The database is NOT seeded here - MySQL inside this
+# image starts empty, so run scripts/setup-bwapp.ps1 afterwards to convert
+# db/bwapp.sqlite into the MySQL schema the app expects and to make the
+# upload directories writable.
+#
+#   docker compose up -d
+#   .\scripts\setup-bwapp.ps1     # seeds the DB, chmods uploads, logs in
+#   .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence
+
+services:
+  bwapp:
+    image: raesene/bwapp:latest
+    container_name: bwapp
+    # Bound to loopback on purpose. This image is deliberately full of
+    # RCE, SQLi and LFI - never publish it on a routable interface.
+    ports:
+      - "127.0.0.1:8080:80"
+    # No volume mounts: the lab is meant to be disposable, and a host mount
+    # would let the upload findings write into the repository.
+    restart: "no"

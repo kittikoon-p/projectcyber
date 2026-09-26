@@ -1,0 +1,10 @@
+# Normalise line endings in the repository and check them out per platform.
+* text=auto
+
+# PowerShell and HTTP request files are only ever edited on Windows here.
+*.ps1  text eol=crlf
+*.http text eol=crlf
+*.env  text eol=crlf
+
+# Evidence is generated text; keep it out of diffs entirely (see .gitignore).
+evidence/** binary

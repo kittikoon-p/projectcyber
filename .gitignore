@@ -1,0 +1,23 @@
+# Captured HTTP responses. Regenerate with:
+#   .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence
+# ~10 MB per run, and it contains a live lab session cookie in the response headers.
+evidence/
+
+# Shared variables for the .http files. Holds a live PHPSESSID once you log in,
+# so it stays out of git. Copy http-client.env.example to get started; the runner
+# works without this file at all because the defaults are baked in.
+http-client.env
+
+# Anything the lab uploads into the container, in case it is ever bind-mounted
+images/shell.php
+*.php.bak
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+.DS_Store
+$RECYCLE.BIN/

