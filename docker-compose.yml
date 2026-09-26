@@ -1,26 +1,26 @@
-# Alternative to the `docker run` inside scripts/setup-bwapp.ps1.
+﻿# ทางเลือกแทนคำสั่ง `docker run` ที่อยู่ใน scripts/setup-bwapp.ps1
 #
-#   docker compose up -d          # start the lab
-#   docker compose down           # throw it away
+#   docker compose up -d          # เริ่ม security lab
+#   docker compose down           # ลบทิ้ง
 #
-# Both routes produce the same container: name "bwapp", published on
-# 127.0.0.1:8080 only. The database is NOT seeded here - MySQL inside this
-# image starts empty, so run scripts/setup-bwapp.ps1 afterwards to convert
-# db/bwapp.sqlite into the MySQL schema the app expects and to make the
-# upload directories writable.
+# ทั้งสองวิธีให้ผลเหมือนกัน: คอนเทนเนอร์ชื่อ "bwapp" เปิดให้เข้าถึงได้ที่
+# 127.0.0.1:8080 เท่านั้น ฐานข้อมูลยังไม่ถูก seed ที่นี่ - MySQL ภายใน
+# image นี้เริ่มต้นแบบว่าง จึงต้องรัน scripts/setup-bwapp.ps1 ต่อท้าย เพื่อแปลง
+# db/bwapp.sqlite เป็น schema ของ MySQL ที่แอปคาดหวัง และเพื่อทำให้
+# ไดเรกทอรีอัปโหลดเป็นแบบเขียนได้
 #
 #   docker compose up -d
-#   .\scripts\setup-bwapp.ps1     # seeds the DB, chmods uploads, logs in
+#   .\scripts\setup-bwapp.ps1     # seed ฐานข้อมูล, chmod โฟลเดอร์อัปโหลด, ล็อกอิน
 #   .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence
 
 services:
   bwapp:
     image: raesene/bwapp:latest
     container_name: bwapp
-    # Bound to loopback on purpose. This image is deliberately full of
-    # RCE, SQLi and LFI - never publish it on a routable interface.
+    # ผูกกับ loopback โดยตั้งใจ image นี้ถูกทำให้เต็มไปด้วย
+    # RCE, SQLi และ LFI - อย่ามีทางเผยแพร่มันบนอินเทอร์เฟซที่ route ถึงได้
     ports:
       - "127.0.0.1:8080:80"
-    # No volume mounts: the lab is meant to be disposable, and a host mount
-    # would let the upload findings write into the repository.
+    # ไม่ mount volume: security lab นี้ตั้งใจให้ทิ้งได้เลย และการ mount
+    # จาก host จะทำให้ข้อค้นพบช่องโหว่อัปโหลดเขียนไฟล์ลงใน repository ได้
     restart: "no"

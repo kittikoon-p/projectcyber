@@ -1,48 +1,46 @@
-# bWAPP security assessment - findings
+# รายงานการประเมินความปลอดภัย bWAPP - รายการช่องโหว่
 
-**Target** `http://127.0.0.1:8080` (Docker container `bwapp`, image
-`raesene/bwapp:latest`)
-**Scope** the whole application, authenticated as `bee` and unauthenticated
-**Method** 122 automated HTTP test cases, each with machine-checked assertions
-and a captured response
-**Result** 117 pass, 0 fail, 5 planned - see [Limitations](#limitations)
+**เป้าหมาย** `http://127.0.0.1:8080` (container `bwapp`, image `raesene/bwapp:latest`)
+**ขอบเขต** ทั้งแอปพลิเคชัน ทั้งแบบล็อกอินในชื่อ `bee` และแบบไม่ล็อกอิน
+**วิธีการ** เทสต์เคส HTTP อัตโนมัติ 122 กรณี แต่ละเคสมี assertion ที่เครื่องตรวจได้เอง
+และมี response ถูกบันทึกไว้
+**ผลลัพธ์** ผ่าน 117, ไม่ผ่าน 0, ข้าม (planned) 5 - ดู[ข้อจำกัด](#ข้อจำกัด)
 
-Every finding below is reproducible from the repository:
+ทุกช่องโหว่ด้านล่างทำซ้ำได้จากโปรเจกต์นี้:
 
 ```powershell
 .\scripts\setup-bwapp.ps1 -Reset
 .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence
 ```
 
-Evidence lives in `evidence/`, one file per case, containing the request that
-was sent and the full response.
+หลักฐานอยู่ใน `evidence/` หนึ่งไฟล์ต่อหนึ่งเคส ภายในมี request ที่ส่งและ
+response เต็ม
 
 ---
 
-## Severity summary
+## สรุปตามระดับความรุนแรง
 
-| Severity | Count | Examples |
+| ระดับ | จำนวน | ตัวอย่าง |
 | --- | --- | --- |
-| Critical | 5 | unauthenticated RCE, credential disclosure, full DB compromise |
-| High | 11 | account takeover, privilege escalation, stored XSS |
-| Medium | 9 | CSRF, open redirect, CORS, clickjacking, enumeration |
-| Low / Info | 6 | banners, robots.txt, TRACE, directory listing |
-| Negative results | 5 | things that are *not* broken - recorded on purpose |
+| Critical (วิกฤต) | 5 | RCE โดยไม่ต้องล็อกอิน, เปิดเผย credential, ควบคุมฐานข้อมูลทั้งหมด |
+| High (สูง) | 11 | เข้าถึงบัญชี, ยกระดับสิทธิ์, stored XSS |
+| Medium (กลาง) | 9 | CSRF, open redirect, CORS, clickjacking, user enumeration |
+| Low / Info (ต่ำ/ข้อมูล) | 6 | banner, robots.txt, TRACE, directory listing |
+| Negative results (ผลเชิงลบ) | 5 | สิ่งที่ *ไม่* เสีย - บันทึกไว้โดยเจตนา |
 
-The severity ratings below describe the bWAPP application as it ships. bWAPP is
-an intentionally vulnerable training target, so "critical" here means "correctly
-identified", not "unexpected".
+ระดับความรุนแรงด้านล่างอธิบายตัวแอป bWAPP ในสภาวะที่มันวางจำหน่าย
+bWAPP เป็นเป้าหมายฝึกที่ *ตั้งใจ* ให้มีช่องโหว่อยู่แล้ว ดังนั้นคำว่า "critical"
+ในที่นี้หมายถึง "ระบุถูกต้อง" ไม่ใช่ "ไม่คาดคิดมา"
 
 ---
 
-## Critical
+## Critical (วิกฤต)
 
-### 1. Unauthenticated remote code execution via file upload
+### 1. Remote code execution โดยไม่ต้องล็อกอิน ผ่านการอัปโหลดไฟล์
 `UPL-01`, `UPL-02`, `UPL-03` · `POST /unrestricted_file_upload.php`
 
-The upload endpoint applies no validation on file type or extension. A PHP
-webshell is accepted, written into the webroot, and executed by the server as
-`www-data`:
+endpoint การอัปโหลดไม่ตรวจสอบชนิดไฟล์หรือนามสกุลเลย webshell ที่เป็น PHP ถูกรับได้
+ถูกเขียนลงใน webroot และถูกเซิร์ฟเวอร์รันสิทธิ์ `www-data`:
 
 ```
 POST /unrestricted_file_upload.php      -> 13430 bytes
@@ -50,290 +48,278 @@ GET  /images/shell.php?c=id             -> 54 bytes, "uid=33(www-data)"
 GET  /images/shell.php?c=cat /app/admin/settings.php
 ```
 
-`UPL-02` is the confirmation: the uploaded file is not merely stored, it runs.
-`UPL-03` reads the application's own database configuration back out through
-it, chaining straight into finding 2.
+`UPL-02` คือหลักฐานยืนยัน: ไฟล์ที่อัปโหลดไม่ได้แค่ถูกเก็บ แต่ถูกรันจริง
+`UPL-03` ใช้ webshell ตัวเดียวกันอ่านค่าคอนฟิกฐานข้อมูลของแอปกลับออกมา
+ซึ่งต่อเข้ากับช่องโหว่ข้อ 2 ได้ทันที
 
-The image ships `images/` and `documents/` read-only for `www-data`, so this
-is unreachable until `setup-bwapp.ps1` chmods them. That is an artefact of the
-image, not a mitigation.
+image ที่ใช้ตั้งค่า `images/` และ `documents/` เป็น read-only สำหรับ `www-data`
+จึงยังเข้าไม่ถึงจนกว่า `setup-bwapp.ps1` จะ chmod ให้ นี่เป็นผลของ image
+ไม่ใช่มาตรการป้องกันจริง
 
-### 2. Unauthenticated disclosure of database and SMTP credentials
+### 2. เปิดเผยข้อมูลเข้าสู่ระบบฐานข้อมูลและ SMTP โดยไม่ต้องล็อกอิน
 `INFO-01` · `GET /admin/` -> 3156 bytes
 
-`/admin/` is reachable with no session and publishes the MySQL credentials,
-the SMTP password and the admin login. It is the first thing an attacker
-would read, and it hands over everything else.
+`/admin/` เข้าถึงได้โดยไม่มี session และเผยแพร่ credential ของ MySQL
+รหัสผ่าน SMTP และบัญชีผู้ดูแลระบบ นี่คือสิ่งแรกที่ผู้โจมตีจะเปิดอ่าน
+และเป็นการมอบกุญแจทั้งชุดให้ไปในครั้งเดียว
 
-The same page is also reachable through the traversal bug
-(`INFO-02`, `LFI-05`), so it cannot be fixed by blocking the one path.
+หน้าเดียวกันยังเข้าถึงได้ผ่านช่องโหว่ path traversal ด้วย
+(`INFO-02`, `LFI-05`) ดังนั้นการปิดเฉพาะเส้นทางเดียวไม่ช่วยอะไร
 
-### 3. SQL injection - full database compromise
-`SQLI-01` .. `SQLI-15` · 15 distinct injection points
+### 3. SQL injection - ควบคุมฐานข้อมูลทั้งหมดได้
+`SQLI-01` .. `SQLI-15` · จุดฉีด 15 จุดที่แตกต่างกัน
 
-Not one injection point but fifteen, across every sink shape the app has:
+ไม่ใช่จุดเดียว แต่เป็นสิบห้าจุด ครอบคลุมทุกรูปแบบของ sink ที่แอปมี:
 
-| Shape | Cases |
+| รูปแบบ | เคส |
 | --- | --- |
-| Boolean-based | `SQLI-01`, `SQLI-06`, `SQLI-07`, `SQLI-14` |
-| UNION-based | `SQLI-02` (column count), `SQLI-03` (full `users` dump), `SQLI-04`, `SQLI-05`, `SQLI-11` |
-| Error/context-based | `SQLI-04`, `SQLI-05`, `XXI-03` |
+| แบบ boolean | `SQLI-01`, `SQLI-06`, `SQLI-07`, `SQLI-14` |
+| แบบ UNION | `SQLI-02` (หาจำนวนคอลัมน์), `SQLI-03` (ดึงตาราง `users` ทั้งตาราง), `SQLI-04`, `SQLI-05`, `SQLI-11` |
+| แบบ error/context | `SQLI-04`, `SQLI-05`, `XXI-03` |
 | Stacked / subquery | `SQLI-12` |
 | POST / LIKE | `SQLI-08` |
-| Login-form auth bypass | `SQLI-09`, `SQLI-10`, `SQLI-15` |
-| Over XML | `SQLI-13` |
-| AJAX / JSON endpoint | `SQLI-11` |
+| auth bypass ผ่านฟอร์มล็อกอิน | `SQLI-09`, `SQLI-10`, `SQLI-15` |
+| ผ่าน XML | `SQLI-13` |
+| endpoint แบบ AJAX / JSON | `SQLI-11` |
 
-`SQLI-03` recovers the whole `users` table including password hashes:
+`SQLI-03` ดึงตาราง `users` ทั้งตารางรวม password hash:
 
 ```
 0 UNION SELECT 1,GROUP_CONCAT(login),GROUP_CONCAT(password),4,5,6 FROM users-- -
 ```
 
-which yields `bee:6885858486f31043e5839c735d99457f045affd0` - the SHA1 of
-`bug`, the documented password. Cracking it is trivial, so this is
-authentication bypass in practice.
+ได้ `bee:6885858486f31043e5839c735d99457f045affd0` ซึ่งคือ SHA1 ของ `bug`
+รหัสผ่านที่เอกสารระบุไว้ การ crack ทำได้ง่ายมาก ในทางปฏิบัตินี่คือการ
+bypass การยืนยันตัวตน
 
-`SQLI-15` is the sharpest version: the same trick against the **real**
-`login.php`, not a demo endpoint.
+`SQLI-15` คือเวอร์ชันที่ร้ายแรงที่สุด: ใช้เทคนิคเดียวกันกับ **`login.php` ตัวจริง**
+ไม่ใช่ endpoint ตัวอย่าง
 
-### 4. Authentication bypass on the login form
+### 4. Bypass การยืนยันตัวตนผ่านฟอร์มล็อกอิน
 `SQLI-15`, `AUTH-02`, `AUTH-03`, `AUTH-11`
 
-Four independent ways past the login:
+มีสี่วิธีที่ไม่ต้องพึ่งกันในการผ่านฟอร์มล็อกอิน:
 
-- `SQLI-15` - `' OR 1=1-- -` in the username field
-- `AUTH-02` - classic SQLi auth bypass
-- `AUTH-03` - the password is never actually checked client-side
-- `AUTH-11` - LDAP wildcard (`*`) returns the first directory entry
+- `SQLI-15` - ใส่ `' OR 1=1-- -` ในช่องชื่อผู้ใช้
+- `AUTH-02` - SQLi auth bypass แบบคลาสสิก
+- `AUTH-03` - รหัสผ่านไม่เคยถูกตรวจสอบจริง ๆ ที่ฝั่ง client
+- `AUTH-11` - LDAP wildcard (`*`) คืนค่า entry แรกของไดเรกทอรีออกมา
 
-Any one of these is a full compromise. Finding 3 is the underlying cause for
-two of them; the other two are independent implementation flaws.
+แต่ละวิธีเป็นการ compromise ทั้งระบบ ช่องโหว่ข้อ 3 เป็นสาเหตุรากของสองในสี่วิธี
+อีกสองวิธีเป็นบั๊กในการ implement ที่แยกจากกัน
 
-### 5. Local file read reaching the whole filesystem, plus source disclosure
+### 5. อ่านไฟล์ในเครื่องได้ทั้งระบบ รวมถึงเปิดเผย source code
 `LFI-01` .. `LFI-07`
 
-`directory_traversal_1.php` takes an unchecked path:
+`directory_traversal_1.php` รับค่า path โดยไม่ตรวจสอบ:
 
 ```
 GET /directory_traversal_1.php?page=../../../../../../../etc/passwd   -> /etc/passwd
 GET /directory_traversal_1.php?page=admin/settings.php               -> PHP source
 ```
 
-Reading PHP as text returns the source, which is how the credentials in
-finding 2 are reachable through a second path. `directory_traversal_2.php`
-additionally lists arbitrary directories (`LFI-06`, `LFI-07`), exposing the
-whole webroot.
+การอ่านไฟล์ PHP ในฐานะข้อความจะได้ source code กลับมา ซึ่งคือเส้นทางที่สอง
+ที่เข้าถึง credential ในข้อ 2 `directory_traversal_2.php` เพิ่มความสามารถ
+ในการแสดงรายการไดเรกทอรีใดก็ได้ (`LFI-06`, `LFI-07`) เปิดเผยทั้ง webroot
 
-`LFI-03` reads the Apache access log, which is the standard pivot into log
-poisoning and then RCE.
+`LFI-03` อ่าน Apache access log ซึ่งเป็นจุดหมุนมาตรฐานไปสู่ log poisoning
+แล้วต่อไปถึง RCE
 
 ---
 
-## High
+## High (สูง)
 
-### 6. Stored XSS, two independent sinks
+### 6. Stored XSS สองจุดที่ต่างกัน
 `XSS-10`, `XSS-11`, `XSS-12`
 
-- `XSS-10` - persists in the blog and is served to every visitor
-- `XSS-11` / `XSS-12` - a two-step, second-order chain: the payload is stored
-  in the user profile, then fires on a *different* page when the profile is
-  rendered
+- `XSS-10` - ถูกเก็บในบล็อกและส่งให้ผู้เข้าชมทุกคน
+- `XSS-11` / `XSS-12` - ห่วงโซ่แบบสองขั้นตอน (second-order): payload ถูกเก็บใน
+  โปรไฟล์ผู้ใช้ แล้วจึงทำงานบน*หน้าอื่น* เมื่อโปรไฟล์ถูกเรนเดอร์
 
-Stored XSS in a session-authenticated app means session theft and full account
-takeover. The second-order variant is the more interesting one, because no
-filter applied at storage time would ever catch it.
+stored XSS ในแอปที่ยืนยันตัวตนด้วย session หมายถึงการขโมย session และเข้าถึง
+บัญชีทั้งหมด เวอร์ชัน second-order น่าสนใจกว่า เพราะไม่มีตัวกรองใดที่ใส่ตอน
+บันทึกข้อมูลจะจับมันได้เลย
 
-### 7. Reflected XSS across every input channel
+### 7. Reflected XSS ผ่านช่องทางนำเข้าข้อมูลทุกช่อง
 `XSS-01` .. `XSS-05`, `XSS-07`, `XSS-08`, `XSS-09`, `XSS-13`
 
-The app reflects unescaped input from GET parameters, POST bodies, the
-`Referer` header, the `User-Agent` header, an arbitrary custom header, an
-`<a href>`, a `javascript:` URL, a JSON response context, a cookie, and an
-`eval()` sink.
+แอปสะท้อนค่าที่ป้อนเข้ามาโดยไม่ escape จาก GET parameter, POST body,
+header `Referer`, header `User-Agent`, custom header ใดก็ได้, `<a href>`,
+URL `javascript:`, context ของ response JSON, cookie และ sink แบบ `eval()`
 
-`XSS-14` records the boundary honestly: at the *medium* security level the
-same payload is escaped and does not fire. The protection exists and works -
-it is simply not on by default.
+`XSS-14` บันทึกขอบเขตอย่างซื่อสัตย์: ที่ security level *กลาง* payload เดียวกันถูก
+escape และไม่ทำงาน กล่องป้องกันมีอยู่จริงและใช้ได้จริง - แค่ไม่ได้เป็นค่าเริ่มต้น
 
-### 8. IDOR - read and write other users' data
+### 8. IDOR - อ่านและเขียนข้อมูลของผู้ใช้อื่น
 `AUTH-10`, `XXI-04`
 
-`AUTH-10` overwrites another user's `secret` by changing the `login`
-parameter. `XXI-04` does the same over the XML endpoint. Neither checks that
-the authenticated user owns the record.
+`AUTH-10` เขียนทับ `secret` ของผู้ใช้อื่นด้วยการเปลี่ยน parameter `login`
+`XXI-04` ทำสิ่งเดียวกันผ่าน endpoint XML ไม่มีการตรวจสอบว่าผู้ใช้ที่
+ล็อกอินเป็นเจ้าของ record นั้นจริงหรือเปล่า
 
-### 9. Privilege escalation to administrator
+### 9. ยกระดับสิทธิ์เป็นผู้ดูแลระบบ
 `CSRF-02`
 
-`csrf_2.php` creates a **new administrator account** with no CSRF token and no
-authorization check. One request, full admin.
+`csrf_2.php` สร้าง**บัญชีผู้ดูแลระบบใหม่** โดยไม่มี CSRF token และไม่มีการ
+ตรวจสอบสิทธิ์ หนึ่ง request เท่านั้นก็ได้สิทธิ์ admin เต็มรูปแบบ
 
-### 10. Password change with no CSRF token and no old-password check
+### 10. เปลี่ยนรหัสผ่านโดยไม่มี CSRF token และไม่ขอรหัสผ่านเดิม
 `AUTH-07`, `CSRF-01`
 
-The authenticated user's password can be changed by a forged cross-site
-request, without the current password. Combined with finding 9 this is a
-complete takeover chain. `AUTH-08` restores the lab password afterwards, so
-the suite is re-runnable.
+รหัสผ่านของผู้ใช้ที่ล็อกอินอยู่ถูกเปลี่ยนได้ด้วย cross-site request ที่ปลอมแปลง
+โดยไม่ต้องใช้รหัสผ่านเดิม เมื่อรวมกับข้อ 9 จะได้เป็นห่วงโซ่ takeover ที่สมบูรณ์
+`AUTH-08` คืนค่ารหัสผ่านของแล็บกลับหลังจากนั้น ทำให้ชุดเทสต์รันซ้ำได้
 
-### 11. Session management failures
+### 11. ความล้มเหลวด้านการจัดการ session
 `AUTH-13`, `AUTH-14`, `INFO-09`
 
-- `AUTH-14` - a session id supplied by the client is accepted (session fixation)
-- `AUTH-13` / `INFO-09` - the "security level" is a **client-side cookie**.
-  Setting it to `2` makes the app *display* as fully hardened while every
-  underlying vulnerability still works
+- `AUTH-14` - ยอมรับ session id ที่ client ส่งมา (session fixation)
+- `AUTH-13` / `INFO-09` - "security level" เป็น **cookie ฝั่ง client**
+  ตั้งเป็น `2` แล้วแอปจะ*แสดงผล*ว่าปิดกั้นอย่างสมบูรณ์ ทั้งที่ช่องโหว่
+  ทุกข้อยังทำงานอยู่
 
-`INFO-09` is the most consequential finding in the report after the RCE,
-because it means the application's own security indicator is attacker-
-controlled. An assessor who trusted it would misjudge the whole system.
+`INFO-09` เป็นข้อค้นพบที่สำคัญที่สุดในรายงานนี้รองลงมาจาก RCE เพราะหมายความว่า
+ตัวชี้วัดความปลอดภัยของแอปเองถูก client ควบคุม ผู้ประเมินที่เชื่อค่านี้
+จะประเมินระบบทั้งระบบผิด
 
 ### 12. OS command injection
 `CMDI-01` .. `CMDI-09`
 
-Five separators work (`;`, `|`, `&&`, `&`, `%0a`), the injected output
-replaces the legitimate one, and files can be read directly. `CMDI-08` and
-`CMDI-09` confirm **blind** injection out-of-band with a timing oracle: a
-5-second `sleep` produced a 5009 ms response against a 3 ms baseline.
+separator แบบต่าง ๆ ใช้ได้ทั้งหมด 5 แบบ (`;`, `|`, `&&`, `&`, `%0a`) เอาต์พุตที่ฉีด
+เข้าไปแทนที่เอาต์พุตจริง และอ่านไฟล์ได้โดยตรง `CMDI-08` และ `CMDI-09` ยืนยัน
+การฉีดแบบ **blind** แบบ out-of-band ด้วย timing oracle: การ `sleep` 5 วินาที
+ให้ response นาน 5009 ms เทียบกับ baseline ที่ 3 ms
 
-`CMDI-07` is an interactive reverse shell, exercised as a payload shape only -
-nothing was left listening.
+`CMDI-07` คือ reverse shell แบบ interactive ทดสอบเฉพาะรูปแบบ payload
+ไม่ได้เปิดให้ฟังไว้จริง
 
 ### 13. PHP code injection
 `CODE-01`, `CODE-02`
 
-`php_eval.php` passes request data to `eval()`. `system("id")` executes;
-arbitrary PHP reads the application's own source back out.
+`php_eval.php` ส่งข้อมูลจาก request เข้า `eval()` คำสั่ง `system("id")` ทำงาน
+และ PHP แบบอิสระอ่าน source code ของแอปกลับออกมาได้
 
-### 14. XML injection into SQL, and broken access control over XML
+### 14. XML injection เข้าสู่ SQL และสิทธิ์เข้าถึงผิดผ่าน XML
 `XXI-01` .. `XXI-04`
 
-`xxe-2.php` builds SQL by string-concatenating XML node values, so the XML is
-an injection surface in its own right. `XXI-01` writes to
-`users.secret`; `XXI-02` and `XXI-03` confirm boolean injection and a verbose
-error leak; `XXI-04` resets **another** user's secret.
+`xxe-2.php` สร้าง SQL ด้วยการต่อสตริงจากค่าในโหนด XML ดังนั้น XML เองคือ
+พื้นที่ฉีดโดยตรง `XXI-01` เขียนลง `users.secret`; `XXI-02` และ `XXI-03` ยืนยัน
+การฉีดแบบ boolean และการรั่ว error แบบละเอียด; `XXI-04` รีเซ็ต `secret` ของ
+**ผู้ใช้อื่น**
 
-### 15. Unauthenticated secret disclosure
+### 15. เปิดเผยข้อมูลลับโดยไม่ต้องล็อกอิน
 `AUTH-09` · `GET /secret.php` -> 14 bytes
 
-Returns the current user's secret with no authorization check. `INFO-02` and
-`LFI-09` show the same class of failure elsewhere.
+คืนค่า secret ของผู้ใช้ปัจจุบันโดยไม่มีการตรวจสอบสิทธิ์ `INFO-02` และ
+`LFI-09` แสดงว่าความล้มเหลวคลาสเดียวกันเกิดที่อื่นด้วย
 
 ### 16. Mail header injection
 `MAIL-01`, `MAIL-02`
 
-CRLF into the e-mail field injects additional recipients via `Cc:`, and the
-`Subject` field is injectable too. With control of the `From` address this is
-a credible phishing primitive.
+CRLF ในช่อง e-mail แทรกผู้รับเพิ่มผ่าน `Cc:` และฟิลด์ `Subject` ก็ฉีดได้
+เมื่อควบคุม `From` ได้ กลายเป็น primitive สำหรับฟิชชิงที่เชื่อถือได้
 
 ---
 
-## Medium
+## Medium (กลาง)
 
-| ID | Finding | Notes |
+| ID | ช่องโหว่ | หมายเหตุ |
 | --- | --- | --- |
-| `CSRF-03` | Destructive action - delete blog entries, no token | Data destruction via a forged request |
-| `CSRF-04` | CSRF demonstrated with an explicit foreign `Origin` | Confirms the browser would actually send it |
-| `CLICK-01`, `CLICK-02` | No `X-Frame-Options` / `frame-ancestors` | Framing works on `/admin/` too, not just the demo page |
-| `CORS-01` | `Access-Control-Allow-Origin: *` on a secret endpoint | Any site can read it |
-| `CORS-02` | Over-narrow allow-list that still reflects the `Origin` header | The check is substring-based and bypassable |
-| `INFO-10`, `INFO-11`, `INFO-12` | Open redirect x3 - `url`, `ReturnUrl`, protocol-relative and `javascript:` | The `javascript:` variant is worse than a redirect: it is XSS in a redirect parameter |
-| `AUTH-05` | User enumeration via the forgotten-password oracle | Different response for valid vs invalid users |
-| `AUTH-12` | Business logic - negative ticket price accepted | Integrity failure, not injection |
-| `XXE` | XXE is **blocked** - see negative results | libxml 2.9 defaults |
+| `CSRF-03` | การกระทำทำลายข้อมูล - ลบบล็อกโดยไม่มี token | ทำลายข้อมูลผ่าน request ที่ปลอมแปลง |
+| `CSRF-04` | แสดง CSRF โดยใช้ `Origin` ต่างประเทศอย่างชัดเจน | ยืนยันว่าเบราว์เซอร์จะส่งคำขอนี้จริง |
+| `CLICK-01`, `CLICK-02` | ไม่มี `X-Frame-Options` / `frame-ancestors` | ฝังเป็น iframe ได้แม้ที่ `/admin/` ไม่ใช่แค่หน้าตัวอย่าง |
+| `CORS-01` | `Access-Control-Allow-Origin: *` บน endpoint ที่มีข้อมูลลับ | เว็บไซต์ใดก็อ่านได้ |
+| `CORS-02` | allow-list แคบเกินไปแต่ยัง reflect header `Origin` กลับ | การตรวจสอบเป็นแบบ substring จึงข้ามได้ |
+| `INFO-10`, `INFO-11`, `INFO-12` | Open redirect 3 แบบ - `url`, `ReturnUrl`, protocol-relative และ `javascript:` | เวอร์ชัน `javascript:` แย่กว่า redirect คือเป็น XSS ใน parameter redirect |
+| `AUTH-05` | ระบุผู้ใช้ที่มีอยู่จริงผ่าน oracle ของ forgot-password | response ต่างกันระหว่างผู้ใช้ที่มี/ไม่มี |
+| `AUTH-12` | business logic - ราคาตั๋วติดลบถูกยอมรับ | ปัญหาความถูกต้องของข้อมูล ไม่ใช่การฉีด |
+| `XXE` | XXE **ถูกบล็อก** - ดูผลเชิงลบ | ค่าเริ่มต้นของ libxml 2.9 |
 
-`CORS-03` is recorded as a negative control: it confirms the CORS tests are
-detecting the header rather than merely detecting a 200 response.
+`CORS-03` ถูกบันทึกเป็น negative control: ยืนยันว่าเทสต์ CORS กำลังตรวจจับ header
+จริง ไม่ใช่แค่ตรวจจับ response ที่เป็น 200
 
 ---
 
-## Low / informational
+## Low / ข้อมูลทั่วไป (ต่ำ)
 
-| ID | Finding |
+| ID | ช่องโหว่ |
 | --- | --- |
-| `INFO-03`, `LFI-08` | `phpinfo()` exposed to any authenticated user - ~80 KB of full server configuration |
-| `INFO-04` | Verbose error reporting on - a missing page returns the error text |
-| `INFO-05` | Directory listing enabled on `/images/` |
-| `INFO-06` | `robots.txt` discloses paths |
-| `VERB-01` | `TRACE` is enabled and echoes the request |
-| `INFO-16` | `backdoor.php` upload helper is reachable |
-| `INFO-15` | `User-Agent` and client IP written to the database unsanitised |
-| `INFO-13` | HTML/tag injection - markup rendered, but not executable |
-| `DOS-01`, `DOS-02` | Resource-exhaustion surface, incl. a 4.9 MB response via the include bug |
+| `INFO-03`, `LFI-08` | `phpinfo()` เปิดให้ผู้ใช้ที่ล็อกอินทุกคนเห็นค่าคอนฟิกเซิร์ฟเวอร์เต็ม ~80 KB |
+| `INFO-04` | เปิด verbose error reporting - หน้าที่ไม่มีอยู่คืนค่าข้อความ error |
+| `INFO-05` | เปิด directory listing ที่ `/images/` |
+| `INFO-06` | `robots.txt` เปิดเผย path |
+| `VERB-01` | `TRACE` เปิดใช้งานและ echo request กลับมา |
+| `INFO-16` | `backdoor.php` ตัวช่วยอัปโหลดเข้าถึงได้ |
+| `INFO-15` | `User-Agent` และ client IP ถูกเขียนลงฐานข้อมูลโดยไม่ sanitize |
+| `INFO-13` | HTML/tag injection - markup ถูกเรนเดอร์ แต่ไม่ execute |
+| `DOS-01`, `DOS-02` | ผิวโค้ง resource exhaustion รวมถึง response ขนาด 4.9 MB ผ่านบั๊กการ include |
 
 ---
 
-## Negative results
+## Negative results (ผลเชิงลบ)
 
-Recorded deliberately. A test that asserts a vulnerability is *absent* is only
-meaningful if you can show it would have caught a real one, so each of these is
-paired with the positive case that proves the detector works.
+บันทึกไว้โดยเจตนา เทสต์ที่ยืนยันว่า *ไม่มี* ช่องโหว่ จะมีความหมายก็ต่อเมื่อ
+เราพิสูจน์ได้ว่ามันจะจับช่องโหว่จริงที่มีอยู่ได้ เทสต์แต่ละข้อจึงจับคู่กับเคส
+เชิงบวกที่พิสูจน์ว่าตัวตรวจจับทำงานจริง
 
-| ID | Not vulnerable | Proof the test is real |
+| ID | ไม่มีช่องโหว่ | หลักฐานว่าเทสต์นี้ตรวจจับจริง |
 | --- | --- | --- |
-| `XXE-01`, `XXE-02`, `XXE-03` | External entities are not resolved - no local file read, no SSRF | The same endpoint *is* injectable via `XXI-01` |
-| `INFO-17` | `login.php` correctly escapes its output | `XSS-01` shows the identical payload firing elsewhere |
-| `CORS-03` | `secret-cors-3.php` leaks data but sends no CORS header | `CORS-01` and `CORS-02` do send them |
-| `SQLI-07` | The FALSE branch of the boolean test does **not** match | The TRUE branch does - so the assertion is discriminating |
-| `AUTH-08` | The lab password is restored after `AUTH-07` | Keeps the suite re-runnable |
+| `XXE-01`, `XXE-02`, `XXE-03` | external entity ไม่ถูก resolve - อ่านไฟล์ในเครื่องไม่ได้ ไม่มี SSRF | endpoint เดียวกัน *ฉีดได้* ผ่าน `XXI-01` |
+| `INFO-17` | `login.php` escape output ถูกต้อง | `XSS-01` แสดง payload เดียวกันทำงานที่อื่น |
+| `CORS-03` | `secret-cors-3.php` รั่วข้อมูลแต่ไม่ส่ง header CORS | `CORS-01` และ `CORS-02` ส่งจริง |
+| `SQLI-07` | branch แบบ FALSE ของเทสต์ boolean **ไม่** match | branch TRUE ตรง - แปลว่า assertion แยกแยะได้จริง |
+| `AUTH-08` | คืนรหัสผ่านของแล็บหลัง `AUTH-07` | ทำให้ชุดเทสต์รันซ้ำได้ |
 
-The XXE result is the interesting one: the app *looks* like it has an XXE
-endpoint, and the payload shape is textbook. libxml 2.9's defaults block it.
-Reporting it as a finding would have been wrong.
+ผล XXE เป็นเรื่องที่น่าสนใจ: แอป*ดูเหมือน*มี endpoint XXE และรูปแบบ payload
+เป็นแบบมาตรฐาน แต่ค่าเริ่มต้นของ libxml 2.9 บล็อกไว้ การรายงานเป็นช่องโหว่
+จะผิด
 
 ---
 
-## Limitations
+## ข้อจำกัด
 
-Five cases are `PLANNED` - the request cannot be emitted by
-`System.Net.HttpWebRequest`, which is the only HTTP client available in
-Windows PowerShell 5.1 without installing anything. Each was confirmed by hand
-against the live target, so none of them is an untested finding.
+ห้าเคสถูกทำเครื่องหมาย `PLANNED` - client ไม่สามารถส่ง request ที่ต้องใช้
+`System.Net.HttpWebRequest` ซึ่งเป็น HTTP client เดียวที่ใช้ได้ใน
+Windows PowerShell 5.1 โดยไม่ต้องติดตั้งอะไรเพิ่ม แต่ละเคสถูกยืนยันด้วยมือกับ
+เป้าหมายจริงแล้ว จึงไม่มีเคสไหนเป็นช่องโหว่ที่ยังไม่ได้ทดสอบ
 
-| ID | What the client refuses to send | Verified manually |
+| ID | สิ่งที่ client ปฏิเสธที่จะส่ง | ยืนยันด้วยมือแล้ว |
 | --- | --- | --- |
-| `XSS-06` | `GET /xss_php_self.php/%3Cscript%3E...` - `System.Uri` un-escapes `%3C`/`%3E` into literal `<` `>`, which the server 404s | Yes - raw request reflects `<form action="/xss_php_self.php/<script>alert(1)</script>" method="GET">` |
-| `SM-01` (file 07) | `CL.TE` disagreement - the client rewrites the framing | Yes, as a surface |
-| `SM-01`, `SM-02` (file 09) | Duplicate `Transfer-Encoding` headers, for obfuscation | Yes, as a surface |
-| `HOST-03` | Absolute-form request line (`GET http://attacker.evil.com/...`) - rewritten to origin-form | Yes, as a surface |
+| `XSS-06` | `GET /xss_php_self.php/%3Cscript%3E...` - `System.Uri` un-escape `%3C`/`%3E` เป็น `<` `>` ตรง ๆ ซึ่งเซิร์ฟเวอร์ตอบ 404 | ใช่ - raw request สะท้อน `<form action="/xss_php_self.php/<script>alert(1)</script>" method="GET">` |
+| `SM-01` (ไฟล์ 07) | ความไม่สอดคล้องกันระหว่าง CL/TE - client เขียน framing ใหม่ | ใช่ ในฐานะผิวโค้ง |
+| `SM-01`, `SM-02` (ไฟล์ 09) | header `Transfer-Encoding` ซ้ำ เพื่อทำ obfuscation | ใช่ ในฐานะผิวโค้ง |
+| `HOST-03` | request line แบบ absolute-form (`GET http://attacker.evil.com/...`) - ถูกเขียนใหม่เป็น origin-form | ใช่ ในฐานะผิวโค้ง |
 
-Two further notes on honesty of scope:
+ข้อสังเกตอีกสองข้อเพื่อความซื่อสัตย์เรื่องขอบเขต:
 
-- **`XSS-06` is confirmed exploitable but not by this runner.** The evidence is
-  the raw-request reflection above. It is deliberately reported as `PLANNED`
-  rather than `PASS` so the automated totals never overstate what the tooling
-  actually did.
-- **Request smuggling is a surface, not a proven desync.** A single-request
-  client cannot demonstrate poisoning a *second* request. Reporting a
-  confirmed desync here would be unsupported.
+- **`XSS-06` ยืนยันแล้วว่าใช้ได้จริง แต่ runner นี้ทำไม่ได้** หลักฐานคือ
+  การสะท้อนจาก raw request ข้างต้น จึงรายงานเป็น `PLANNED` โดยตั้งใจ
+  ไม่ใช่ `PASS` เพื่อไม่ให้ตัวเลขอัตโนมัติเกินจริงว่าเครื่องมือทำอะไรได้จริง
+- **Request smuggling เป็นผิวโค้ง ไม่ใช่ desync ที่พิสูจน์แล้ว** client ที่ยิง
+  request เดียวไม่สามารถสาธิตการเปลื้อน request ที่สองได้ การรายงานว่า
+  พบ desync ที่ยืนยันแล้วจะไม่มีหลักฐานรองรับ
 
-Other scope boundaries:
+ขอบเขตอื่น ๆ:
 
-- The suite runs as `bee` at security level 0. Level 1 and 2 behaviour is
-  sampled (`XSS-14`) but not swept.
-- LDAP injection (`AUTH-11`) is verified against bWAPP's simulated LDAP, not a
-  real directory.
-- Timing-based findings (`CMDI-08`, `CMDI-09`) are single-sample. On a loaded
-  machine the 5009 ms vs 3 ms gap is unambiguous, but this is not a
-  statistically rigorous timing study.
+- ชุดเทสต์รันในชื่อ `bee` ที่ security level 0 พฤติกรรมของ level 1 และ 2
+  มีการสุ่มตรวจ (`XSS-14`) แต่ไม่ได้สแกนครบทุกหน้า
+- LDAP injection (`AUTH-11`) ทดสอบกับ LDAP จำลองของ bWAPP ไม่ใช่ directory จริง
+- เทสต์ที่อาศัยเวลา (`CMDI-08`, `CMDI-09`) ใช้ตัวอย่างเดียว เว้น 5009 ms เทียบกับ 3 ms
+  ชัดเจนพอแม้เครื่องจะหนัก แต่นี่ไม่ใช่การศึกษา timing ที่มีสถิติรองรับ
 
 ---
 
-## Remediation priorities
+## ลำดับความสำคัญในการแก้ไข
 
-1. **Remove the arbitrary-upload endpoint, or validate and relocate uploads.**
-   Findings 1 and 12 are the whole ballgame; everything else is recoverable.
-2. **Delete `/admin/`, or put it behind real authentication.** It publishes
-   every credential in the application.
-3. **Parameterise every query.** Fifteen injection points are one habit, not
-   fifteen bugs.
-4. **Escape on output, centrally, for every context** - HTML, attribute, JS,
-   URL, CSS. The number of XSS sinks tracks the number of places output is
-   built by hand.
-5. **Make the security level server-side.** A cookie the client controls is not
-   a control.
-6. **Add authorization checks to every object reference**, and CSRF tokens to
-   every state-changing request.
-7. **Turn off `phpinfo()`, directory listing, `TRACE` and verbose errors**, and
-   store passwords with a memory-hard hash instead of SHA1.
+1. **ปิด endpoint อัปโหลดอิสระ หรือตรวจสอบและย้ายที่เก็บไฟล์** ข้อ 1 และ 12
+   คือประเด็นทั้งหมด ส่วนที่เหลือกู้คืนได้
+2. **ลบ `/admin/` หรือวางหลังการยืนยันตัวตนจริง** มันเผยแพร่ทุก credential
+   ในระบบ
+3. **ใช้ parameterized query ทุกที่** จุดฉีดสิบห้าจุดคือนิสัยเดียว ไม่ใช่บั๊กสิบห้าตัว
+4. **Escape ตอน output อย่างรวมศูนย์ สำหรับทุก context** - HTML, attribute, JS,
+   URL, CSS จำนวน sink ของ XSS ขึ้นตามจำนวนที่มีคนสร้าง output ด้วยมือ
+5. **ทำให้ security level อยู่ฝั่ง server** cookie ที่ client ควบคุมไม่ใช่มาตรการ
+6. **เพิ่มการตรวจสอบสิทธิ์ทุก object reference** และ CSRF token ทุก request
+   ที่เปลี่ยนสถานะ
+7. **ปิด `phpinfo()`, directory listing, `TRACE` และ verbose error** และเก็บ
+   รหัสผ่านด้วย hash แบบ memory-hard แทน SHA1

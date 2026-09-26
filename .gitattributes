@@ -1,10 +1,10 @@
-# Normalise line endings in the repository and check them out per platform.
+﻿# ทำให้ line ending ใน repository เป็นมาตรฐานเดียวกัน และ checkout ตามแต่ละแพลตฟอร์ม
 * text=auto
 
-# PowerShell and HTTP request files are only ever edited on Windows here.
+# ไฟล์ PowerShell และไฟล์คำขอ HTTP ถูกแก้ไขบน Windows เท่านั้น
 *.ps1  text eol=crlf
 *.http text eol=crlf
 *.env  text eol=crlf
 
-# Evidence is generated text; keep it out of diffs entirely (see .gitignore).
+# Evidence เป็นข้อความที่ถูกสร้างขึ้น จึงตัดออกจาก diff ทั้งหมด (ดู .gitignore)
 evidence/** binary

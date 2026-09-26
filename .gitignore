@@ -1,18 +1,18 @@
-# Captured HTTP responses. Regenerate with:
+﻿# HTTP responses ที่บันทึกไว้ สร้างใหม่ได้ด้วย:
 #   .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence
-# ~10 MB per run, and it contains a live lab session cookie in the response headers.
+# ประมาณ 10 MB ต่อรอบ และมี cookie เซสชันของ lab ที่ยังใช้งานได้อยู่ใน response headers
 evidence/
 
-# Shared variables for the .http files. Holds a live PHPSESSID once you log in,
-# so it stays out of git. Copy http-client.env.example to get started; the runner
-# works without this file at all because the defaults are baked in.
+# ตัวแปรร่วมสำหรับไฟล์ .http เมื่อล็อกอินแล้วจะเก็บ PHPSESSID ที่ยังใช้งานได้
+# จึงต้องไม่เก็บไว้ใน git คัดลอก http-client.env.example เพื่อเริ่มต้นใช้งาน แม้ไม่มีไฟล์นี้
+# ตัวรันก็ยังทำงานได้ เพราะค่าเริ่มต้นถูกฝังไว้ในตัวโปรแกรมแล้ว
 http-client.env
 
-# Anything the lab uploads into the container, in case it is ever bind-mounted
+# ไฟล์ใด ๆ ที่ security lab อัปโหลดเข้าไปในคอนเทนเนอร์ เผื่อวันหนึ่งมันถูก bind-mount
 images/shell.php
 *.php.bak
 
-# Editor / OS noise
+# ไฟล์ขยะจาก editor / ระบบปฏิบัติการ
 .vscode/
 .idea/
 *.swp

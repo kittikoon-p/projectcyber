@@ -1,41 +1,41 @@
-<#
+﻿<#
     .SYNOPSIS
-        Executes and verifies the request files in http/*.http without an IDE.
+        รันและตรวจสอบไฟล์คำขอใน http/*.http โดยไม่ต้องใช้ IDE
 
     .DESCRIPTION
-        Parser + sender for the VS Code REST Client / JetBrains HTTP Client format.
+        ตัวอ่าน (parser) และตัวส่ง (sender) สำหรับรูปแบบไฟล์ของ VS Code REST Client / JetBrains HTTP Client
 
-        Request grammar
-            ###                     comment / request title
-            # comment               comment
-            @name = value           variable assignment (http-client.env)
-            GET /path HTTP/1.1      request line
-            Header: value           request header
-            <blank line>            end of headers; body follows verbatim
+        ไวยากรณ์ของคำขอ
+            ###                     ความคิดเห็น / ชื่อคำขอ
+            # comment               ความคิดเห็น
+            @name = value           การกำหนดค่าตัวแปร (http-client.env)
+            GET /path HTTP/1.1      บรรทัดคำขอ
+            Header: value           ส่วนหัวของคำขอ
+            <blank line>            จุดสิ้นสุดส่วนหัว จากนี้เป็นเนื้อหา (body) ตามที่เขียนไว้
 
-        Verification hints, read from the ### block above a request
-            ### EXPECT-STATUS: 200            exact status to assert
-            ### EXPECT-STATUS: 200|302        one of several acceptable statuses
-            ### EXPECT-BODY: some substring    substring that must appear
-            ### EXPECT-NOT: some substring     substring that must NOT appear
-            ### EXPECT-HEADER: Name            response header that must be present
-            ### SKIP                            report the case but do not send it
+        ข้อกำหนดการตรวจสอบ อ่านจากบล็อก ### ที่อยู่เหนือคำขอ
+            ### EXPECT-STATUS: 200            สถานะที่ต้องตรงทั้งหมด
+            ### EXPECT-STATUS: 200|302        สถานะที่ยอมรับได้ หนึ่งในหลายค่า
+            ### EXPECT-BODY: some substring    ข้อความย่อยที่ต้องปรากฏ
+            ### EXPECT-NOT: some substring     ข้อความย่อยที่ต้องไม่ปรากฏ
+            ### EXPECT-HEADER: Name            ส่วนหัวการตอบกลับที่ต้องมีอยู่
+            ### SKIP                            รายงานเคสนี้แต่ไม่ส่งคำขอ
 
-        A request with no hints is sent and only reported, never failed.
+        คำขอที่ไม่มีข้อกำหนดการตรวจสอบ จะถูกส่งและรายงานผลเท่านั้น ไม่ถือว่าล้มเหลว
 
-        Session handling
-        00-auth.http logs in and its Set-Cookie fills an in-run cookie jar, so
-        the remaining files inherit an authenticated session without a manual
-        copy/paste. PHPSESSID learned during the run also overwrites {{session}}
-        for the rest of the run, which is what stops stale Cookie: headers from
-        http-client.env from overriding the fresh session.
+        การจัดการ session
+        ไฟล์ 00-auth.http จะเข้าสู่ระบบ และค่า Set-Cookie ที่ได้จะเติมที่เก็บคุกกี้ (cookie jar)
+        ภายในรอบการรัน ดังนั้นไฟล์ที่เหลือจึงสืบทอด session ที่ยืนยันตัวตนแล้วโดยไม่ต้องคัดลอกเอง
+        PHPSESSID ที่เรียนรู้ระหว่างรันจะเขียนทับค่า {{session}} ต่อไปในรอบการรันด้วย
+        ซึ่งเป็นสิ่งที่ป้องกันไม่ให้ส่วนหัว Cookie: ที่ค้างอยู่จาก http-client.env
+        มาทับ session ใหม่
 
     .EXAMPLE
         .\scripts\Run-HttpFile.ps1 -File http\00-auth.http
         .\scripts\Run-HttpFile.ps1 -File http\01-sqli.http -Only SQLI-03
-        # full sweep, store responses, refresh @session for the IDE
+        # รันทั้งหมด บันทึก response และอัปเดต @session สำหรับ IDE
         .\scripts\Run-HttpFile.ps1 -File http\*.http -SaveEvidence -UpdateEnv
-        # report only
+        # รายงานอย่างเดียว
         .\scripts\Run-HttpFile.ps1 -File http\*.http -ReportOnly
 #>
 [CmdletBinding()]
@@ -51,13 +51,18 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# PowerShell 5.1 writes to the console using the OEM code page, so Thai text in
+# these messages turns into mojibake unless the console is switched to UTF-8.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 $Root = Split-Path $PSScriptRoot -Parent
 if (-not $EnvFile) { $EnvFile = Join-Path $Root 'http-client.env' }
 $AutoLogin = -not $NoAutoLogin
 
-# ---------------------------------------------------------------- variables
-# Defaults come first so a fresh clone works with no http-client.env at all;
-# anything the env file defines wins.
+# ---------------------------------------------------------------- ตัวแปร
+# ค่าเริ่มต้นมาก่อน เพื่อให้การ clone ใหม่ทำงานได้แม้ไม่มีไฟล์ http-client.env เลย
+# ส่วนที่ไฟล์ env เป็นตัวกำหนดจะมีผลเหนือกว่า
 $defaults = @{
     baseUrl       = 'http://127.0.0.1:8080'
     bwappUser     = 'bee'
@@ -73,7 +78,7 @@ if (Test-Path $EnvFile) {
         if ($line -match '^\s*@(\w+)\s*=\s*(.*)$') { $vars[$Matches[1]] = $Matches[2].Trim() }
     }
 }
-# a blank value in the env file should not wipe out a working default
+# ค่าว่างในไฟล์ env ไม่ควรลบค่าเริ่มต้นที่ใช้ได้อยู่
 foreach ($k in $defaults.Keys) {
     if ([string]::IsNullOrWhiteSpace([string]$vars[$k])) { $vars[$k] = $defaults[$k] }
 }
@@ -86,7 +91,7 @@ function Expand-Vars([string]$text) {
     $text
 }
 
-# ---------------------------------------------------------------- cookie jar
+# ---------------------------------------------------------------- ที่เก็บคุกกี้ (cookie jar)
 $jar = @{}
 
 function Read-CookiePairs([string]$header) {
@@ -99,7 +104,7 @@ function Read-CookiePairs([string]$header) {
 }
 
 function Merge-CookieHeader([string]$explicit) {
-    # explicit values from the file win, the jar only fills the gaps
+    # ค่าที่ระบุไว้ในไฟล์มีผลเหนือกว่า jar จะเติมเฉพาะช่องที่ยังว่าง
     $pairs = Read-CookiePairs $explicit
     foreach ($k in $jar.Keys) {
         if (-not $pairs.Contains($k)) { $pairs[$k] = $jar[$k] }
@@ -119,7 +124,7 @@ function Update-CookieJar($respHeaders) {
     }
 }
 
-# ---------------------------------------------------------------- sender
+# ---------------------------------------------------------------- ตัวส่ง
 function Send-Request {
     param([string]$Url, [string]$Method, [hashtable]$Headers, [string]$Body)
 
@@ -141,12 +146,12 @@ function Send-Request {
         if ($k -ieq 'Cookie') { $explicitCookie = $Headers[$k]; continue }
         if ($k -ieq 'Content-Type') { $req.ContentType = $Headers[$k]; continue }
         if ($k -ieq 'Host') {
-            # HttpWebRequest rejects a Host equal to the URI authority, and only
-            # permits an override when it differs (needed by the host-header tests)
+            # HttpWebRequest ปฏิเสธ Host ที่เท่ากับ authority ของ URI และจะ
+            # อนุญาตให้กำหนดค่าใหม่ก็ต่อเมื่อค่านั้นต่างออกไป (จำเป็นสำหรับเทสต์ host-header)
             if ($Headers[$k] -ne $hostPart) { $req.Host = $Headers[$k] }
             continue
         }
-        try { $req.Headers[$k] = $Headers[$k] } catch { Write-Verbose "header dropped: $k" }
+        try { $req.Headers[$k] = $Headers[$k] } catch { Write-Verbose "ตัดหัวทิ้ง: $k" }
     }
     $ck = Merge-CookieHeader $explicitCookie
     if ($ck) { $req.Headers.Add('Cookie', $ck) }
@@ -184,14 +189,14 @@ function Send-Request {
     }
 }
 
-# ---------------------------------------------------------------- parser
+# ---------------------------------------------------------------- ตัวอ่าน
 function New-Want {
     [ordered]@{ Status = $null; Body = @(); Not = @(); Header = @(); Skip = $false; Time = $null }
 }
 
-# One hint line -> one assertion. Accepts both the machine form
+# หนึ่งบรรทัดข้อกำหนด -> หนึ่ง assertion รองรับทั้งรูปแบบสำหรับเครื่อง
 #   EXPECT-STATUS: 200|302 / EXPECT-BODY: x / EXPECT-NOT: x / EXPECT-HEADER: x
-# and the prose form the suites are written in, e.g.
+# และรูปแบบข้อความธรรมดาที่ชุดเทสต์เขียนไว้ เช่น
 #   Expected: 200, body contains "marker"
 function Add-Hint($want, [string]$text) {
     if ($text -match '^EXPECT-STATUS:\s*(\S+)') { $want.Status = @($Matches[1] -split '\|'); return }
@@ -200,7 +205,7 @@ function Add-Hint($want, [string]$text) {
     if ($text -match '^EXPECT-HEADER:\s*(.+)$') { $want.Header += $Matches[1].Trim(); return }
     if ($text -match '^EXPECT-TIME-AT-LEAST:\s*(\d+)') { $want.Time = [int]$Matches[1]; return }
     if ($text -match '^SKIP\b') { $want.Skip = $true; return }
-    # prose fallback: never override an explicit EXPECT-* line with the same field
+    # สำรองสำหรับรูปแบบข้อความ: ห้ามเขียนทับบรรทัด EXPECT-* ที่ระบุชัดเจนในฟิลด์เดียวกัน
     if ($text -match 'Expected:\s*(\d{3})' -and -not $want.Status) { $want.Status = @($Matches[1]) }
     if ($text -match 'body (?:must )?contains\s+"([^"]+)"') { $want.Body += $Matches[1] }
     if ($text -match 'body must not contain\s+"([^"]+)"') { $want.Not += $Matches[1] }
@@ -223,8 +228,8 @@ function Read-HttpFile {
 
         if ($line -match '^\s*###') {
             $text = ($line -replace '^\s*###+\s*', '').Trim()
-            # A hint line right after a request documents THAT request, so it must
-            # not close it. Anything else starts/extends the block for the next one.
+            # บรรทัดข้อกำหนดที่อยู่ถัดจากคำขอเป็นเอกสารอธิบายคำขอนั้น จึงต้องไม่ปิดบล็อกของมัน
+            # บรรทัดอื่นทั้งหมดจะเริ่มหรือต่อยอดบล็อกของคำขอถัดไป
             if ($cur -and (Test-HintLine $text)) {
                 Add-Hint $cur.Want $text
                 [void]$cur.Notes.Add($text)
@@ -247,12 +252,12 @@ function Read-HttpFile {
         }
 
         if ($line -match '^\s*([A-Z]+)\s+(\S.*?)(?:\s+HTTP/\d\.\d)?\s*$') {
-            # copy out of $Matches immediately: any later -match clobbers it
+            # แกนค่าออกจาก $Matches ทันที เพราะ -match ครั้งถัดไปจะเขียนทับมัน
             $mMethod = $Matches[1]
             $mUrl = $Matches[2]
             $noteSnapshot = @($notes)
-            # -cmatch: the ID pattern is all-caps, so a lowercase filename in a
-            # comment block (xxe-2.php, sqli_16.php) must not be mistaken for one
+            # -cmatch: รูปแบบ ID เป็นตัวพิมพ์ใหญ่ทั้งหมด ชื่อไฟล์ตัวพิมพ์เล็กใน
+            # บล็อกความคิดเห็น (xxe-2.php, sqli_16.php) จึงต้องไม่ถูกเข้าใจผิดว่าเป็น ID
             $id = ($noteSnapshot | Where-Object { $_ -cmatch '^[A-Z]{2,}-\d+' } | Select-Object -First 1)
             $want = New-Want
             foreach ($n in $noteSnapshot) { Add-Hint $want $n }
@@ -270,15 +275,15 @@ function Read-HttpFile {
         }
     }
     if ($cur) { [void]$requests.Add($cur) }
-    # Blank lines between blocks otherwise accumulate into the body, which makes
-    # HttpWebRequest reject a GET with "cannot send a content-body with this verb".
+    # ไม่เช่นนั้นบรรทัดว่างระหว่างบล็อกจะสะสมเข้าไปใน body ทำให้
+    # HttpWebRequest ปฏิเสธ GET ด้วยข้อความ "cannot send a content-body with this verb"
     foreach ($q in $requests) { if ($q.Body) { $q.Body = ($q.Body -replace '(\r?\n)+$', '') } }
     , $requests
 }
 
-# bWAPP calls session_regenerate_id() and logout.php destroys the session
-# outright, so a run across several files has to log in again between them.
-# Credentials come from http-client.env (@bwappUser / @bwappPass / @securityLevel).
+# bWAPP เรียก session_regenerate_id() และ logout.php ทำลาย session ทิ้งไปทั้งหมด
+# ดังนั้นการรันข้ามหลายไฟล์จึงต้องเข้าสู่ระบบใหม่ระหว่างแต่ละไฟล์
+# ข้อมูลเข้าสู่ระบบมาจาก http-client.env (@bwappUser / @bwappPass / @securityLevel)
 function Login-Bwapp {
     $body = 'login={0}&password={1}&security_level={2}&form=submit' -f `
         [uri]::EscapeDataString($vars['bwappUser']), `
@@ -297,32 +302,32 @@ function Login-Bwapp {
     return $false
 }
 
-# ---------------------------------------------------------------- run
+# ---------------------------------------------------------------- การรัน
 $results = New-Object System.Collections.ArrayList
 $evidenceDir = Join-Path $Root 'evidence'
 $liveSession = $null
 if ($SaveEvidence -and -not $ReportOnly) { New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null }
 
 foreach ($f in $File) {
-    # expand "http\*.http" - PowerShell does not glob a quoted path argument
+    # ขยาย "http\*.http" - PowerShell ไม่ทำ glob ให้กับอาร์กิวเมนต์พาธที่อยู่ในเครื่องหมายคำพูด
     $matches = if ($f -match '[\*\?]') {
         @(Get-ChildItem -Path $f -File -ErrorAction SilentlyContinue | Sort-Object Name)
     } else { @($f) }
-    if (-not $matches.Count) { Write-Output "!! no file matched: $f"; continue }
+    if (-not $matches.Count) { Write-Output "!! ไม่พบไฟล์ที่ตรงกับ: $f"; continue }
 
     foreach ($f in $matches) {
     $full = if ([System.IO.Path]::IsPathRooted($f)) { "$f" } else { Join-Path $Root "$f" }
-    if (-not (Test-Path $full)) { Write-Output "!! missing: $f"; continue }
+    if (-not (Test-Path $full)) { Write-Output "!! ไม่พบไฟล์: $f"; continue }
     $name = [System.IO.Path]::GetFileNameWithoutExtension($full)
     Write-Output ""
     Write-Output ("=" * 100)
     Write-Output "  $name.http"
     Write-Output ("=" * 100)
 
-    # 00-auth.http demonstrates the login itself, so leave it alone
+    # 00-auth.http เป็นตัวอย่างการเข้าสู่ระบบ จึงไม่ต้องแตะต้อง
     if ($AutoLogin -and $name -ne '00-auth' -and -not $ReportOnly) {
-        if (Login-Bwapp) { Write-Output "  (re-authenticated as $($vars['bwappUser']))" }
-        else { Write-Output "  !! auto-login FAILED - results below will be unauthenticated" }
+        if (Login-Bwapp) { Write-Output "  (เข้าสู่ระบบใหม่แล้วในชื่อ $($vars['bwappUser']))" }
+        else { Write-Output "  !! auto-login FAILED - ผลลัพธ์ด้านล่างจะยังไม่ได้เข้าสู่ระบบ" }
     }
 
     $reqs = Read-HttpFile -Path $full
@@ -339,7 +344,7 @@ foreach ($f in $File) {
         $url = Expand-Vars $r.Url
         $body = Expand-Vars $r.Body
         if ($url -match '\{\{' -or ($body -match '\{\{')) {
-            Write-Output ("  {0,-9} {1,-52} SKIP (unresolved variable)" -f 'UNRESOLVED', $id)
+            Write-Output ("  {0,-9} {1,-52} SKIP (ตัวแปรยังไม่ถูกแทนค่า)" -f 'UNRESOLVED', $id)
             [void]$results.Add([pscustomobject]@{ File = $name; Id = $id; Status = '-'; Verdict = 'SKIP' })
             continue
         }
@@ -349,47 +354,47 @@ foreach ($f in $File) {
             continue
         }
 
-        # 00-auth.http ends with logout.php, which clears the jar. Put the session
-        # back so the rest of the run stays authenticated.
+        # 00-auth.http จบด้วย logout.php ซึ่งจะล้าง jar เราจึงใส่ session กลับเข้าไป
+        # เพื่อให้การรันที่เหลือยังคงอยู่ในสถานะเข้าสู่ระบบแล้ว
         if ($liveSession -and -not $jar.ContainsKey('PHPSESSID')) { $jar['PHPSESSID'] = $liveSession }
 
         $res = Send-Request -Url $url -Method $r.Method -Headers $headers -Body $body
         if ($jar.ContainsKey('PHPSESSID') -and $jar['PHPSESSID']) {
             $liveSession = $jar['PHPSESSID']
-            # keep {{session}} in step with the live session, otherwise a stale
-            # Cookie: {{session}} header in a later file wins over the jar
+            # ปรับ {{session}} ให้ตรงกับ session ที่ใช้งานจริง มิฉะนั้นส่วนหัว
+            # Cookie: {{session}} ที่ค้างอยู่ในไฟล์ถัดไปจะมีผลเหนือ jar
             $vars['session'] = $liveSession
             $vars['authCookie'] = "PHPSESSID=$liveSession; security_level=0"
         }
 
-        # ---- assertions
+        # ---- assertions (การตรวจสอบ)
         $verdict = 'PASS'
         $why = @()
         if ($r.Want.Status) {
-            if ($res.Status -notin $r.Want.Status) { $verdict = 'FAIL'; $why += "status $($res.Status) not in $($r.Want.Status -join '|')" }
+            if ($res.Status -notin $r.Want.Status) { $verdict = 'FAIL'; $why += "status $($res.Status) ไม่อยู่ใน $($r.Want.Status -join '|')" }
         }
-        # Global invariant: everything except the login/logout endpoints needs a
-        # live session. A bounce back to login.php always means the session died.
+        # ข้อบังคับระดับทั้งหมด: ทุกอย่างนอกจาก endpoint ของ login/logout ต้องมี session ที่ใช้ได้จริง
+        # การถูกส่งกลับไปที่ login.php เสมอแปลว่า session หมดอายุ
         if ($url -notmatch '/(login|logout|security_level_set)\.php' -and
             $res.Status -eq 302 -and $res.Location -match 'login\.php') {
-            $verdict = 'FAIL'; $why += 'bounced to login.php - session is not authenticated'
+            $verdict = 'FAIL'; $why += 'ถูกส่งกลับไปที่ login.php - session ยังไม่ได้เข้าสู่ระบบ'
         }
         foreach ($b in $r.Want.Body) {
-            if ($res.Body -notlike "*$b*") { $verdict = 'FAIL'; $why += "body missing '$b'" }
+            if ($res.Body -notlike "*$b*") { $verdict = 'FAIL'; $why += "body ไม่พบ '$b'" }
         }
         foreach ($b in $r.Want.Not) {
-            if ($res.Body -like "*$b*") { $verdict = 'FAIL'; $why += "body must not contain '$b'" }
+            if ($res.Body -like "*$b*") { $verdict = 'FAIL'; $why += "body ต้องไม่มี '$b'" }
         }
         foreach ($h in $r.Want.Header) {
             $found = $false
             foreach ($k in $res.Headers.Keys) { if ($k -ieq $h -or $res.Headers[$k] -like "*$h*") { $found = $true; break } }
-            if (-not $found) { $verdict = 'FAIL'; $why += "header missing '$h'" }
+            if (-not $found) { $verdict = 'FAIL'; $why += "header ไม่พบ '$h'" }
         }
         if ($r.Want.Time -and $res.Ms -lt $r.Want.Time) {
-            $verdict = 'FAIL'; $why += "took $($res.Ms)ms, expected >= $($r.Want.Time)ms"
+            $verdict = 'FAIL'; $why += "ใช้เวลา $($res.Ms)ms, คาดว่า >= $($r.Want.Time)ms"
         }
-        # a request that is neither 2xx nor carrying a stated expectation is a miss
-        if (-not $r.Want.Status -and $res.Status -ge 400) { $verdict = 'FAIL'; $why += "unexpected $($res.Status)" }
+        # คำขอที่ไม่ได้อยู่ในช่วง 2xx และไม่มีข้อกำหนดที่ระบุไว้ ถือว่าไม่ผ่าน
+        if (-not $r.Want.Status -and $res.Status -ge 400) { $verdict = 'FAIL'; $why += "ไม่คาดหวัง $($res.Status)" }
 
         $loc = if ($res.Location) { " -> $($res.Location)" } else { '' }
         $note = if ($why) { '  [' + ($why -join '; ') + ']' } else { '' }
@@ -402,11 +407,11 @@ foreach ($f in $File) {
             if ($safe.Length -gt 70) { $safe = $safe.Substring(0, 70) }
             $dest = Join-Path $evidenceDir "$name__$safe.txt"
             $hdrLines = ($res.Headers.Keys | Sort-Object | ForEach-Object { "$_`: $($res.Headers[$_])" }) -join "`n"
-            @("$id", "$($r.Method) $url", "HTTP $($res.Status)  ($($res.Ms) ms)", "", "--- response headers ---", $hdrLines, "", "--- body ---", $res.Body) |
+            @("$id", "$($r.Method) $url", "HTTP $($res.Status)  ($($res.Ms) ms)", "", "--- response headers (ส่วนหัวการตอบกลับ) ---", $hdrLines, "", "--- body (เนื้อหา) ---", $res.Body) |
                 Out-File -Encoding utf8 $dest
         }
         if ($ShowBody) {
-            Write-Output '      --- body (first 1500 chars) ---'
+            Write-Output '      --- body (1500 ตัวอักษรแรก) ---'
             $snippet = if ($res.Body.Length -gt 1500) { $res.Body.Substring(0, 1500) } else { $res.Body }
             Write-Output ($snippet -split "`n" | ForEach-Object { "      $_" })
         }
@@ -414,7 +419,7 @@ foreach ($f in $File) {
     }
 }
 
-# ---------------------------------------------------------------- summary
+# ---------------------------------------------------------------- สรุปผล
 Write-Output ""
 Write-Output ("=" * 100)
 $pass = @($results | Where-Object Verdict -eq 'PASS').Count
@@ -425,19 +430,19 @@ $pct = if ($total) { [math]::Round(100 * ($pass + $fail) / $total, 1) } else { 0
 Write-Output "TOTAL: $total   PASS: $pass   FAIL: $fail   SKIP/PLANNED: $skip   decided: $pct%"
 if ($fail) {
     Write-Output ""
-    Write-Output "FAILURES"
+    Write-Output "FAILURES (รายการที่ไม่ผ่าน)"
     $results | Where-Object Verdict -eq 'FAIL' | ForEach-Object { "  $($_.File) / $($_.Id)  [$($_.Status)] $($_.Note)" }
 }
 
 if ($UpdateEnv) {
-    if (-not $liveSession) { Write-Output "UPDATE-ENV: no live PHPSESSID was captured" }
+    if (-not $liveSession) { Write-Output "UPDATE-ENV: ไม่พบ PHPSESSID ที่ใช้งานได้จริงในรอบนี้" }
     else {
         $text = Get-Content $EnvFile
         $text = $text -replace '(?m)^@session\s*=.*$', "@session = $liveSession"
         if (-not ($text -match '(?m)^@session\s*=')) { $text += "`n@session = $liveSession" }
         $text = $text -replace '(?m)^@authCookie\s*=.*$', "@authCookie = PHPSESSID=$liveSession; security_level=0"
         [System.IO.File]::WriteAllText($EnvFile, ($text -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
-        Write-Output "UPDATE-ENV: PHPSESSID $liveSession written to $([System.IO.Path]::GetFileName($EnvFile))"
+        Write-Output "UPDATE-ENV: เขียน PHPSESSID $liveSession ลงใน $([System.IO.Path]::GetFileName($EnvFile))"
     }
 }
 
