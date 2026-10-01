@@ -117,7 +117,7 @@ Host: localhost:8080
 Cookie: {{authCookie}}
 ### Expected: 200, reports the current level
 ###
-### ...and the same page while claiming to be hardened:
+### INFO-18  The same page while claiming to be hardened
 GET {{baseUrl}}/security_level_check.php HTTP/1.1
 Host: localhost:8080
 Cookie: PHPSESSID={{session}}; security_level=2
@@ -158,7 +158,7 @@ Host: localhost:8080
 Cookie: PHPSESSID={{session}}; security_level=0
 ### Expected: 302, Location: //evil.com
 ###
-### ...and the javascript: pseudo-protocol:
+### INFO-19  The javascript: pseudo-protocol
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=javascript%3Aalert(document.domain) HTTP/1.1
 Host: localhost:8080
 Cookie: PHPSESSID={{session}}; security_level=0

@@ -30,11 +30,19 @@
         ซึ่งเป็นสิ่งที่ป้องกันไม่ให้ส่วนหัว Cookie: ที่ค้างอยู่จาก http-client.env
         มาทับ session ใหม่
 
+    ไฟล์ผลลัพธ์
+        ทุกรอบจะเขียน evidence/results.json เสมอ และเก็บหลักฐานแบบ .txt เมื่อใช้ -SaveEvidence
+        สคริปต์ New-Dashboard.ps1 อ่าน results.json ไปสร้าง dashboard.html ซึ่งเปิดจาก file:// ได้
+        ถ้ารันครบทุกไฟล์ ระบบจะลบหลักฐาน .txt เก่าที่ไม่อยู่ในผลรอบนี้ทิ้ง
+        (ใช้ -KeepStaleEvidence เพื่อเก็บไว้ทั้งหมด)
+
     .EXAMPLE
         .\scripts\Run-HttpFile.ps1 -File http\00-auth.http
         .\scripts\Run-HttpFile.ps1 -File http\01-sqli.http -Only SQLI-03
         # รันทั้งหมด บันทึก response และอัปเดต @session สำหรับ IDE
         .\scripts\Run-HttpFile.ps1 -File http\*.http -SaveEvidence -UpdateEnv
+        # รันทั้งหมดแล้วสร้างหน้าเว็บสรุปผลให้ด้วย
+        .\scripts\Run-HttpFile.ps1 -File http\*.http -SaveEvidence -Dashboard
         # รายงานอย่างเดียว
         .\scripts\Run-HttpFile.ps1 -File http\*.http -ReportOnly
 #>
@@ -47,7 +55,9 @@ param(
     [switch]$ShowBody,
     [switch]$UpdateEnv,
     [switch]$ReportOnly,
-    [switch]$NoAutoLogin
+    [switch]$NoAutoLogin,
+    [switch]$KeepStaleEvidence,
+    [switch]$Dashboard
 )
 
 $ErrorActionPreference = 'Continue'
@@ -261,6 +271,11 @@ function Read-HttpFile {
             $id = ($noteSnapshot | Where-Object { $_ -cmatch '^[A-Z]{2,}-\d+' } | Select-Object -First 1)
             $want = New-Want
             foreach ($n in $noteSnapshot) { Add-Hint $want $n }
+            # เหตุผลของเคส PLANNED อยู่ในบรรทัดคำอธิบายก่อน request
+            # ตัดบรรทัด ID และบรรทัดที่เป็น directive (EXPECT-*/SKIP) ออก
+            $why = @($noteSnapshot | Where-Object {
+                $_ -and $_ -ne $id -and -not (Test-HintLine $_)
+            })
             $cur = [pscustomobject]@{
                 Id      = if ($id) { $id } else { ($noteSnapshot | Select-Object -First 1) }
                 Notes   = New-Object System.Collections.ArrayList
@@ -269,6 +284,7 @@ function Read-HttpFile {
                 Headers = @{}
                 Body    = ''
                 Want    = $want
+                Why     = $why
             }
             $notes.Clear()
             $mode = 'headers'
@@ -345,12 +361,25 @@ foreach ($f in $File) {
         $body = Expand-Vars $r.Body
         if ($url -match '\{\{' -or ($body -match '\{\{')) {
             Write-Output ("  {0,-9} {1,-52} SKIP (ตัวแปรยังไม่ถูกแทนค่า)" -f 'UNRESOLVED', $id)
-            [void]$results.Add([pscustomobject]@{ File = $name; Id = $id; Status = '-'; Verdict = 'SKIP' })
+            [void]$results.Add([pscustomobject]@{
+                File = $name; Id = $id; Method = $r.Method; Url = $url; Status = '-'
+                Bytes = 0; Ms = 0; Verdict = 'SKIP'; Reason = 'ตัวแปรยังไม่ถูกแทนค่า'
+                Note = 'ตัวแปรยังไม่ถูกแทนค่า'; Evidence = ''
+            })
             continue
         }
         if ($r.Want.Skip -or $ReportOnly) {
             Write-Output ("  {0,-9} {1,-52} {2} {3}" -f 'PLANNED', $id, $r.Method, $url)
-            [void]$results.Add([pscustomobject]@{ File = $name; Id = $id; Status = '-'; Verdict = 'PLANNED' })
+            # บรรทัด RUNNER-CANNOT-SEND คือเหตุผลสั้นที่สุดที่เขียนไว้ในไฟล์ .http
+            # เก็บทั้งเหตุผลยาวไว้ใน Note และเหตุผลสั้นไว้ใน Reason
+            $short = (@($r.Why) | Where-Object { $_ -match '^\s*RUNNER-CANNOT-SEND' } | Select-Object -First 1)
+            if (-not $short) { $short = @($r.Why)[0] }
+            [void]$results.Add([pscustomobject]@{
+                File = $name; Id = $id; Method = $r.Method; Url = $url; Status = '-'
+                Bytes = 0; Ms = 0; Verdict = 'PLANNED'
+                Reason = ($short -replace '^\s*RUNNER-CANNOT-SEND:\s*', '')
+                Note = (@($r.Why) -join "\n"); Evidence = ''
+            })
             continue
         }
 
@@ -400,12 +429,20 @@ foreach ($f in $File) {
         $note = if ($why) { '  [' + ($why -join '; ') + ']' } else { '' }
         Write-Output ("  {0,-9} {1,-52} {2} {3} {4} bytes {5}ms{6}{7}" -f `
             $verdict, $id, $r.Method, ($url -replace [regex]::Escape($vars['baseUrl']), ''), $res.Body.Length, $res.Ms, $loc, $note)
-        [void]$results.Add([pscustomobject]@{ File = $name; Id = $id; Status = $res.Status; Verdict = $verdict; Note = ($why -join '; ') })
+
+        # ชื่อไฟล์หลักฐานถูกคำนวณก่อนบันทึกผล เพื่อให้ dashboard ผูกไปยังไฟล์เดียวกันได้
+        $safe = ($id -replace '[^A-Za-z0-9._-]', '_')
+        if ($safe.Length -gt 70) { $safe = $safe.Substring(0, 70) }
+        $evidenceName = "$name__$safe.txt"
+
+        [void]$results.Add([pscustomobject]@{
+            File = $name; Id = $id; Method = $r.Method; Url = $url; Status = $res.Status
+            Bytes = $res.Body.Length; Ms = $res.Ms; Verdict = $verdict
+            Reason = ''; Note = ($why -join '; '); Evidence = $evidenceName
+        })
 
         if ($SaveEvidence) {
-            $safe = ($id -replace '[^A-Za-z0-9._-]', '_')
-            if ($safe.Length -gt 70) { $safe = $safe.Substring(0, 70) }
-            $dest = Join-Path $evidenceDir "$name__$safe.txt"
+            $dest = Join-Path $evidenceDir $evidenceName
             $hdrLines = ($res.Headers.Keys | Sort-Object | ForEach-Object { "$_`: $($res.Headers[$_])" }) -join "`n"
             @("$id", "$($r.Method) $url", "HTTP $($res.Status)  ($($res.Ms) ms)", "", "--- response headers (ส่วนหัวการตอบกลับ) ---", $hdrLines, "", "--- body (เนื้อหา) ---", $res.Body) |
                 Out-File -Encoding utf8 $dest
@@ -444,6 +481,45 @@ if ($UpdateEnv) {
         [System.IO.File]::WriteAllText($EnvFile, ($text -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
         Write-Output "UPDATE-ENV: เขียน PHPSESSID $liveSession ลงใน $([System.IO.Path]::GetFileName($EnvFile))"
     }
+}
+
+# ---------------------------------------------------------------- results.json
+# เขียนผลเป็น JSON ให้ New-Dashboard.ps1 เอาไปสร้างหน้าเว็บ
+# เขียนเสมอแม้ไม่ใช้ -SaveEvidence เพราะไฟล์นี้เล็กมาก
+if ($total -and -not $ReportOnly) {
+    $payload = [pscustomobject]@{
+        generated = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        baseUrl   = $vars['baseUrl']
+        total     = $total
+        pass      = $pass
+        fail      = $fail
+        planned   = $skip
+        results   = @($results)
+    }
+    $jsonPath = Join-Path $evidenceDir 'results.json'
+    if (-not (Test-Path $evidenceDir)) { New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null }
+    [System.IO.File]::WriteAllText(
+        $jsonPath,
+        ($payload | ConvertTo-Json -Depth 4),
+        (New-Object System.Text.UTF8Encoding($false)))
+    Write-Output "RESULTS-JSON: $jsonPath"
+
+    # ตัดหลักฐานเก่าทิ้ง เพื่อไม่ให้ไฟล์ค้างจากรอบก่อนปนกับผลรอบนี้
+    # ทำเฉพาะตอนที่รันครบทุกไฟล์เท่านั้น ถ้ารันไฟล์เดียวจะไม่ไปลบหลักฐานของไฟล์อื่น
+    $allFiles = @(Get-ChildItem (Join-Path $Root 'http') -Filter '*.http' -ErrorAction SilentlyContinue)
+    $ranFiles = @($results | ForEach-Object { $_.File } | Sort-Object -Unique)
+    if (-not $KeepStaleEvidence -and $allFiles.Count -and $ranFiles.Count -eq $allFiles.Count) {
+        $keep = @{}
+        foreach ($r in $results) { if ($r.Evidence) { $keep[$r.Evidence] = $true } }
+        $stale = @(Get-ChildItem $evidenceDir -Filter '*.txt' -ErrorAction SilentlyContinue |
+            Where-Object { -not $keep.ContainsKey($_.Name) })
+        foreach ($f in $stale) { Remove-Item $f.FullName -Force }
+        if ($stale.Count) { Write-Output "PRUNE-EVIDENCE: ลบหลักฐานเก่า $($stale.Count) ไฟล์ที่ไม่อยู่ในผลรอบนี้" }
+    }
+}
+
+if ($Dashboard) {
+    & (Join-Path $PSScriptRoot 'New-Dashboard.ps1')
 }
 
 if ($fail) { exit 1 }

@@ -9,7 +9,7 @@
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### 1. Baseline - confirm the target is alive
+### BOOT-01  Baseline - confirm the target is alive
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/login.php HTTP/1.1
 Host: localhost:8080
@@ -18,7 +18,7 @@ Accept: text/html
 
 
 ### ---------------------------------------------------------------------------
-### 2. LOGIN - grab the PHPSESSID from the Set-Cookie response header
+### BOOT-02  LOGIN - grab the PHPSESSID from the Set-Cookie response header
 ### ---------------------------------------------------------------------------
 ### The submit button is named `form`, NOT `login_submit`, and the security
 ### level is submitted in the same POST. Getting this wrong silently returns
@@ -34,7 +34,7 @@ login=bee&password=bug&security_level=0&form=submit
 
 
 ### ---------------------------------------------------------------------------
-### 3. AUTHENTICATED BASELINE - prove the session works
+### BOOT-03  AUTHENTICATED BASELINE - prove the session works
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/portal.php HTTP/1.1
 Host: localhost:8080
@@ -44,7 +44,7 @@ Accept: text/html
 
 
 ### ---------------------------------------------------------------------------
-### 4. Read the current user's secret (no authorization check at all)
+### BOOT-04  Read the current user's secret (no authorization check at all)
 ###    BWAPP-AUTH-06 / A1 Broken Access Control
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret.php HTTP/1.1
@@ -54,7 +54,7 @@ Cookie: {{authCookie}}
 
 
 ### ---------------------------------------------------------------------------
-### 5. Set the security level via the app's own endpoint
+### BOOT-05  Set the security level via the app's own endpoint
 ###    Proves the "protection" is nothing but a cookie the client controls.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/security_level_set.php HTTP/1.1
@@ -67,7 +67,7 @@ security_level=0&form=submit
 
 
 ### ---------------------------------------------------------------------------
-### 6. Logout
+### BOOT-06  Logout
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/logout.php HTTP/1.1
 Host: localhost:8080

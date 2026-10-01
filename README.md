@@ -23,10 +23,12 @@ TOTAL: 122   PASS: 117   FAIL: 0   SKIP/PLANNED: 5   decided: 95.9%
 # 1. สตาร์ตแล็บ, seed ฐานข้อมูล, ปรับสิทธิ์โฟลเดอร์สำหรับอัปโหลด
 .\scripts\setup-bwapp.ps1 -Reset
 
-# 2. รันเทสต์ทั้งหมดและบันทึก response
-.\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence
+# 2. รันเทสต์ทั้งหมด บันทึก response แล้วสร้างหน้าเว็บสรุปผล
+.\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -Dashboard
 
-# 3. เริ่มต้นใหม่ทั้งหมด
+# 3. เปิด dashboard.html ด้วยเบราว์เซอร์
+
+# 4. เริ่มต้นใหม่ทั้งหมด
 .\scripts\setup-bwapp.ps1 -Reset
 ```
 
@@ -61,9 +63,48 @@ scripts/setup-bwapp.ps1    สร้างแล็บขึ้นมาจา�
 scripts/Run-HttpFile.ps1   ตัว parse, ส่ง, ตรวจสอบ และสรุปผลของไฟล์ .http
 scripts/validate.ps1       ตัวตรวจสอบแบบ batch รุ่นเก่า เก็บไว้เป็นมุมมองที่สอง
 scripts/probe.ps1          ยิง request เดี่ยว ๆ ที่ล็อกอินแล้ว เอาไว้เดิ
+scripts/New-Dashboard.ps1  สร้าง dashboard.html จากผลรอบล่าสุด
+scripts/Test-Dashboard.js  ตรวจข้อมูลใน dashboard (ต้องมี Node.js)
+scripts/Test-DashboardUi.js ตรวจพฤติกรรมตัวกรองในเบราว์เซอร์จริง (ต้องมี Node.js)
 evidence/                  response ที่บันทึกไว้ (อยู่ใน .gitignore, ~10 MB)
+dashboard.html             หน้าเว็บสรุปผล (อยู่ใน .gitignore, สร้างใหม่ได้เสมอ)
 docs/report.md             รายงานช่องโหว่ทั้งหมด
 ```
+
+## หน้าเว็บสรุปผล
+
+`New-Dashboard.ps1` อ่าน `evidence/results.json` ที่ตัวรันเขียนไว้ทุกรอบ
+แล้วสร้าง `dashboard.html` ไฟล์เดียวจบ
+
+```powershell
+# รันเทสต์แล้วสร้างหน้าเว็บในคำสั่งเดียว
+.\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -Dashboard
+
+# หรือสร้างใหม่จากผลรอบล่าสุดโดยไม่ต้องยิง request ซ้ำ
+.\scripts\New-Dashboard.ps1
+```
+
+หน้าเว็บเปิดจาก `file://` ได้เลย ไม่ต้องมีเซิร์ฟเวอร์ ไม่ต้องมีเน็ต
+และไม่ต้องติดตั้งอะไร เพราะข้อมูลถูกฝังไว้ในไฟล์ HTML ไม่ได้ดึงมาด้วย `fetch()`
+ซึ่งเบราว์เซอร์จะบล็อกเมื่อเปิดแบบ `file://`
+
+ในหน้าเว็บมีตัวกรองตามผลและตามไฟล์ ช่องค้นหา และคลิกที่แถวเพื่อดู URL
+เหตุผลที่ไม่ผ่าน กับลิงก์ไปยังไฟล์หลักฐานใน `evidence/`
+รหัสและชื่อเทสต์เป็นภาษาอังกฤษตามที่เขียนไว้ใน `http/*.http`
+ส่วนข้อความอื่นเป็นภาษาไทย
+
+ไฟล์นี้เป็นภาพ snapshot ของผลรอบล่าสุด ไม่ใช่ตัวรันเทสต์
+และถูก `.gitignore` ไว้เช่นเดียวกับ `evidence/`
+เพราะเนื้อหาขึ้นกับผลการรันจริงและมีขนาดระดับหลายสิบ KB
+
+ตรวจสอบว่าหน้าเว็บยังแสดงผลถูกต้องได้ด้วย (ถ้ามี Node.js ติดตั้งไว้):
+
+```powershell
+node .\scripts\Test-Dashboard.js     # ตรวจข้อมูล ตัวเลข และลิงก์หลักฐาน
+node .\scripts\Test-DashboardUi.js   # ตรวจตัวกรองและช่องค้นหาในเบราว์เซอร์จริง
+```
+
+สคริปต์ทดสอบสองตัวนี้เป็นของ optional ตัวรันเทสต์หลักไม่ได้พึ่ง Node.js เลย
 
 ## runner สองตัว
 

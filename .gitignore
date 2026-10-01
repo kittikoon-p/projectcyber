@@ -3,6 +3,11 @@
 # ประมาณ 10 MB ต่อรอบ และมี cookie เซสชันของ lab ที่ยังใช้งานได้อยู่ใน response headers
 evidence/
 
+# หน้าเว็บสรุปผล เป็นภาพ snapshot ที่สร้างจาก evidence/results.json
+# จึงสร้างใหม่ได้ด้วย:
+#   .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -Dashboard
+dashboard.html
+
 # ตัวแปรร่วมสำหรับไฟล์ .http เมื่อล็อกอินแล้วจะเก็บ PHPSESSID ที่ยังใช้งานได้
 # จึงต้องไม่เก็บไว้ใน git คัดลอก http-client.env.example เพื่อเริ่มต้นใช้งาน แม้ไม่มีไฟล์นี้
 # ตัวรันก็ยังทำงานได้ เพราะค่าเริ่มต้นถูกฝังไว้ในตัวโปรแกรมแล้ว
