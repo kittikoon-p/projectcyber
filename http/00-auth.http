@@ -12,7 +12,7 @@
 ### BOOT-01  Baseline - confirm the target is alive
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/login.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Accept: text/html
 ### Expected: 200 and a login form
 
@@ -26,7 +26,7 @@ Accept: text/html
 ###
 ### Copy the PHPSESSID value into http-client.env as @session.
 POST {{baseUrl}}/login.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee&password=bug&security_level=0&form=submit
@@ -37,7 +37,7 @@ login=bee&password=bug&security_level=0&form=submit
 ### BOOT-03  AUTHENTICATED BASELINE - prove the session works
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/portal.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Accept: text/html
 ### Expected: 200, page shows "Welcome Bee" and the bug list
@@ -48,7 +48,7 @@ Accept: text/html
 ###    BWAPP-AUTH-06 / A1 Broken Access Control
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200 text/plain -> "Your secret: <the secret>"
 
@@ -58,7 +58,7 @@ Cookie: {{authCookie}}
 ###    Proves the "protection" is nothing but a cookie the client controls.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/security_level_set.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -70,6 +70,6 @@ security_level=0&form=submit
 ### BOOT-06  Logout
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/logout.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 302 -> login.php

@@ -4,7 +4,7 @@
 [bWAPP](https://github.com/raesene/bWAPP) มีเทสต์เคส HTTP ทั้งหมด 122 กรณี
 ซึ่งถูกส่งและตรวจสอบผลลัพธ์อัตโนมัติ พร้อมหลักฐานครบทุกข้อ
 
-ทุกอย่างทำงานกับ container Docker แบบใช้แล้วทิ้ง บน `127.0.0.1:8080`
+ทุกอย่างทำงานกับ container Docker แบบใช้แล้วทิ้ง บน `127.0.0.1:8443`
 ไม่มีสิ่งใดในโปรเจกต์นี้แตะเครือข่ายที่คุณไม่ได้เป็นเจ้าของ
 
 ```
@@ -110,22 +110,48 @@ node .\scripts\Test-DashboardUi.js   # ตรวจตัวกรองแล�
 
 `Run-HttpFile.ps1` คือตัวหลัก มันอ่านไฟล์ `.http` เดิม ทำให้เทสต์ยังอ่านเข้าใจง่าย
 และส่งด้วยมือจาก VS Code (REST Client) หรือ JetBrains ได้ด้วย
-แต่ละ request มี assertion แบบให้เครื่องตรวจได้เอง:
+แต่ละ request ระบุผลลัพธ์ที่คาดหวังไว้เหนือคำขอ ตัว runner อ่านได้ทั้ง
+syntax เต็มและรูปแบบข้อความธรรมดา:
 
 ```http
-### XSS-01 Reflected, GET parameters
-GET {{baseUrl}}/xss_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x HTTP/1.1
+### SQLI-07 Boolean blind - FALSE branch (control, proves the blind is real)
+POST {{baseUrl}}/sqli_5.php HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
 
-> {% response.status %}
+title=' AND 1=2 AND title='&action=search
+### EXPECT-STATUS: 200
+### EXPECT-NOT: The movie exists in our database!
 ```
 
-- `> {% response.status %}` - status ที่คาดหวัง, `200|302` ได้เมื่อมีหลายค่า
-- `> {% response.body %}` - ข้อความย่อยที่ต้องมีอยู่
-- `> {% response.header.X %}` - ค่า header ที่คาดหวัง
-- `> {% response.time %}` - assertion ด้านเวลา ใช้กับ blind injection
-- `> {% not.response.body %}` - **negative control**: ข้อความที่ต้อง *ไม่* มี
-- บรรทัดท้าย `# Expect: ...` - เขียนความหมายแบบบรรยาย สำหรับ editor ที่ไม่เข้าใจ
-  syntax ข้างบน
+- `### EXPECT-STATUS: 200` - status ที่คาดหวัง, `200|302` ได้เมื่อมีหลายค่า
+- `### EXPECT-BODY: ข้อความย่อย` - ข้อความที่ต้อง **มี** อยู่ใน body
+- `### EXPECT-NOT: ข้อความย่อย` - **negative control**: ข้อความที่ต้อง **ไม่** มี
+- `### EXPECT-HEADER: ชื่อ header` - ส่วนหัวที่ต้องมีอยู่
+- `### EXPECT-TIME-AT-LEAST: 500` - assertion ด้านเวลา ใช้กับ blind injection
+- `### SKIP` - รายงานเคสนี้แต่ไม่ส่งคำขอ (นับเป็น planned)
+
+รูปแบบข้อความธรรมดาสำหรับอ่านง่าย ใช้ได้กับ editor ที่ไม่เข้าใจ syntax ข้างบน
+ตัว runner ดันจับให้บางส่วน:
+
+```http
+### Expected: 200, body contains "The movie exists in our database!"
+```
+
+คำเตือนสำคัญเรื่องความหมายของ PASS
+: เคสที่ไม่มี `EXPECT-*` เลยจะเริ่มต้นเป็น `PASS` และจะกลายเป็น `FAIL`
+  เฉพาะเมื่อได้ status >= 400 หรือถูกเด้งกลับ `login.php` (session หมด)
+  ดังนั้นตัวเลข PASS ที่รายงานเป็นการยืนยันว่า**เป้าหมายตอบกลับและ session ยังใช้ได้**
+  ไม่ใช่การยืนยันว่าช่องโหว่ทำงานจริง การยืนยันระดับเนื้อหาต้องมี `EXPECT-BODY`
+  หรือ `EXPECT-NOT` ปัจจุบันมี 11 เคสจาก 122 ที่ตรวจระดับเนื้อหา อีก 1 เคสตรวจ
+  ระดับเวลา (`CMDI-09` ยืนยัน blind command injection ด้วยค่าความต่าง 5008ms
+  เทียบกับ 8ms ของเคสปกติ) ส่วนที่เหลืออีก 105 เคสตรวจระดับ status เป็นหลัก
+  และเป็นงานรอบถัดไป
+
+ข้อควรระวังเวลาเลือก marker
+: marker ที่กว้างเกินไปจะผ่านโดยไม่ได้ยืนยันอะไร เช่น `bWAPP` ปรากฏใน 84 จาก
+  117 ไฟล์หลักฐาน และ `Did you captured our GOLDEN packet?` เป็นข้อความในเทมเพลต
+  ของหน้า `commandi.php` ไม่ใช่ผลลัพธ์ของคำสั่งที่ inject การยืนยัน oracle ของ
+  blind injection ต้องใช้ `EXPECT-TIME-AT-LEAST` ไม่ใช่ค้นหาข้อความใน body
 
 สวิตช์ที่ใช้บ่อย:
 
@@ -156,12 +182,26 @@ container เดิมได้
 | `Run-HttpFile.ps1` | 122 | 117 | 0 | 5 |
 | `validate.ps1` | 75 | 75 | 0 | 0 |
 
-ครอบคลุม: SQL injection (15), XSS รวมแบบ stored และผ่าน cookie (14),
-local file read และ source disclosure (9), OS command และ PHP injection (11),
-XXE/XML injection (7), mail header injection (2), unrestricted upload (4),
-ช่องโหว่ด้าน authentication และ session (14), CSRF (4), clickjacking (2),
-CORS (3), information disclosure (17), host header และ HTTP verb (5)
-และผิวโค้ง DoS (2)
+ครอบคลุม 122 เคส แบ่งตามกลุ่มช่องโหว่ได้ดังนี้
+
+| กลุ่ม | เคส |
+| --- | --- |
+| Baseline / ตรวจความยังมีชีวิตของเป้าหมาย | 6 |
+| SQL injection | 15 |
+| XSS (reflected, stored, cookie, หลาย context) | 14 |
+| Local file read และ source disclosure | 9 |
+| OS command injection และ PHP code injection | 11 |
+| XXE และ XML injection | 7 |
+| Mail header injection | 2 |
+| Unrestricted file upload | 4 |
+| Authentication และ session | 15 |
+| CSRF | 4 |
+| Clickjacking | 2 |
+| CORS | 3 |
+| Information disclosure, open redirect, header injection | 19 |
+| Host header และ HTTP verb | 6 |
+| HTTP request smuggling | 3 |
+| DoS | 2 |
 
 5 เคสที่ถูกข้ามเป็น **ข้อจำกัดของ client ไม่ใช่ช่องโหว่ที่ยังไม่ได้ทดสอบ**
 `System.Uri` และ `HttpWebRequest` ปฏิเสธที่จะส่ง request line ที่ผิดรูปแบบ

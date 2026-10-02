@@ -74,7 +74,7 @@ $AutoLogin = -not $NoAutoLogin
 # ค่าเริ่มต้นมาก่อน เพื่อให้การ clone ใหม่ทำงานได้แม้ไม่มีไฟล์ http-client.env เลย
 # ส่วนที่ไฟล์ env เป็นตัวกำหนดจะมีผลเหนือกว่า
 $defaults = @{
-    baseUrl       = 'http://127.0.0.1:8080'
+    baseUrl       = 'http://127.0.0.1:8443'
     bwappUser     = 'bee'
     bwappPass     = 'bug'
     securityLevel = '0'

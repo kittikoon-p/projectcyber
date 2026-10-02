@@ -46,6 +46,13 @@ $jsonForHtml = ($data | ConvertTo-Json -Depth 6 -Compress) -replace '<', '\u003c
 # เตรียมรายการไฟล์สำหรับตัวกรอง
 $files = @($data.results | ForEach-Object { $_.File } | Sort-Object -Unique)
 
+# ความกว้างแต่ละส่วนของแถบสรุปเป็น % - เหลือส่วนท้ายให้ planned เสมอ
+# เพื่อให้ผลรวมกว้างเต็มแถบเสมอ ไม่ขึ้นกับปัดเศษทศนิยม
+$total = [double]$data.total
+$pctPass = if ($total) { [math]::Round($data.pass * 100 / $total, 3) } else { 0 }
+$pctFail = if ($total) { [math]::Round($data.fail * 100 / $total, 3) } else { 0 }
+$pctPlanned = [math]::Round(100 - $pctPass - $pctFail, 3)
+
 $html = @"
 <!doctype html>
 <html lang="th">
@@ -55,150 +62,188 @@ $html = @"
 <title>bWAPP - ผลการทดสอบความปลอดภัย</title>
 <style>
   :root {
-    --bg: #0d1117;
-    --panel: #161b22;
-    --line: #262d36;
-    --text: #e6edf3;
-    --muted: #8b949e;
+    --bg: #0a0d13;
+    --panel: #12161f;
+    --line: #1c2230;
+    --text: #e8eef6;
+    --dim: #79828f;
+    --faint: #4f5763;
     --pass: #3fb950;
     --fail: #f85149;
     --planned: #d29922;
-    --accent: #58a6ff;
+    --accent: #7aa2f7;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+    --ease: cubic-bezier(0.2, 0, 0.2, 1);
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; scrollbar-color: #232a36 var(--bg); }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", "Leelawadee UI", Roboto, sans-serif;
+    font: 13.5px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", "Leelawadee UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 96px; }
-
-  header { margin-bottom: 32px; }
-  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); font-size: 13px; }
-
-  /* แถบสรุปตัวเลข */
-  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin: 24px 0 28px; }
-  .stat {
-    flex: 1 1 120px; padding: 14px 16px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  /* แสงเรืองจางมากด้านบน กันพื้นหลังแบนจนดูแข็งและไม่เหนื่อยตา */
+  body::before {
+    content: ""; position: fixed; inset: 0 0 auto; height: 340px; pointer-events: none;
+    background: radial-gradient(70% 100% at 50% 0, rgba(122, 162, 247, 0.07), transparent 72%);
   }
-  .stat b { display: block; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  .stat span { color: var(--muted); font-size: 12px; }
-  .stat.pass b { color: var(--pass); }
-  .stat.fail b { color: var(--fail); }
-  .stat.planned b { color: var(--planned); }
+  ::selection { background: rgba(122, 162, 247, 0.3); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 64px 24px 96px; }
 
-  /* แถบควบคุม */
-  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  /* หัวเรื่อง - บรรทัดเดียว ไม่มีกล่อง */
+  header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+  h1 span { color: var(--dim); font-weight: 400; }
+  .sub { margin-left: auto; color: var(--faint); font-size: 11.5px; font-family: var(--mono); }
+
+  /* แถบสัดส่วนผล + ตัวเลขสรุป */
+  .meter { display: flex; height: 2px; margin-top: 24px; border-radius: 2px; overflow: hidden; background: var(--line); }
+  .meter i { display: block; height: 100%; }
+  .meter i.pass { background: var(--pass); }
+  .meter i.fail { background: var(--fail); }
+  .meter i.planned { background: var(--planned); }
+  .tally { display: flex; gap: 18px; flex-wrap: wrap; margin: 11px 0 34px; font-size: 12px; color: var(--faint); }
+  .tally b { color: var(--dim); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tally .pass b { color: var(--pass); }
+  .tally .fail b { color: var(--fail); }
+  .tally .planned b { color: var(--planned); }
+
+  /* ตัวกรองกับหัวตารางตรึงไว้บนจอ ตัวกรอง 122 แถวแล้วไม่ต้องเลื่อนขึ้นมาหาใหม่ */
+  .panel { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: 12px; }
+
+  /* แถบควบคุม - ปุ่มไร้กรอบ ตัวอักษรเล็ก */
+  .filters { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding-bottom: 14px; }
+  .grp { display: flex; gap: 2px; flex-wrap: wrap; }
   .chip {
-    padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px;
-    background: transparent; color: var(--muted); cursor: pointer;
-    font: inherit; font-size: 13px;
+    padding: 3px 9px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--faint); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap;
+    transition: color 0.13s var(--ease), background-color 0.13s var(--ease);
   }
-  .chip:hover { border-color: var(--muted); color: var(--text); }
-  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
-  .spacer { flex: 1; }
+  .chip:hover { color: var(--text); background: var(--panel); }
+  .chip[aria-pressed="true"] { color: var(--text); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
   input[type=search] {
-    flex: 1 1 200px; min-width: 160px; padding: 6px 12px;
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--line); border-radius: 999px; font: inherit; font-size: 13px;
+    margin-left: auto; min-width: 200px; padding: 5px 10px 5px 28px;
+    background: var(--panel) no-repeat 9px center / 13px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%234f5763' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.4 10.4 14 14'/%3E%3C/svg%3E");
+    color: var(--text); border: 1px solid transparent; border-radius: 7px;
+    font: inherit; font-size: 12px; transition: border-color 0.13s var(--ease);
   }
+  input[type=search]::-webkit-search-cancel-button { filter: grayscale(1) opacity(0.5); }
+  input[type=search]::placeholder { color: var(--faint); }
   input[type=search]:focus { outline: none; border-color: var(--accent); }
 
   /* หัวตาราง */
   .head, .row {
     display: grid;
-    grid-template-columns: 22px 118px 1fr 54px 46px 54px;
+    grid-template-columns: 12px 78px 1fr 42px 46px;
     gap: 12px; align-items: center;
   }
   .head {
-    padding: 0 12px 8px; color: var(--muted);
-    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 0 6px 8px; color: var(--faint);
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
     border-bottom: 1px solid var(--line);
   }
-  .head .num, .row .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .head .num, .row .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--faint); }
 
-  /* แถวผลการทดสอบ */
+  /* แถวผลการทดสอบ - เส้นคั่นบาง ไม่มีกล่อง */
   .row {
-    padding: 9px 12px; border-radius: 6px; cursor: pointer;
-    border: 1px solid transparent;
+    padding: 7px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.03); cursor: pointer;
+    transition: background-color 0.13s var(--ease);
   }
   .row:hover { background: var(--panel); }
-  .row.open { background: var(--panel); border-color: var(--line); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .row.open { background: var(--panel); box-shadow: inset 2px 0 0 var(--accent); }
+  .dot { width: 5px; height: 5px; border-radius: 50%; justify-self: center; }
   .dot.pass { background: var(--pass); }
   .dot.fail { background: var(--fail); }
   .dot.planned { background: var(--planned); }
-  .id { color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* รหัสเทสต์ 122 บรรทัดถ้าสีฟ้าทั้งหมดจะรกสายตา - จังหวะสีให้ตอน hover หรือตอนกางเท่านั้น */
+  .id { font-family: var(--mono); font-size: 11.5px; color: var(--faint); letter-spacing: -0.01em; transition: color 0.13s var(--ease); }
+  .row:hover .id, .row.open .id { color: var(--accent); }
   .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .num { color: var(--muted); font-size: 12px; }
   .row.fail .name { color: var(--fail); }
-  .row.planned .name { color: var(--muted); }
+  .row.planned .name { color: var(--dim); }
 
   /* แผงรายละเอียดเมื่อกดแถว */
-  .detail { display: none; padding: 4px 12px 16px 46px; }
+  .detail { display: none; padding: 1px 6px 15px 30px; }
   .row.open + .detail { display: block; }
-  .detail dl { display: grid; grid-template-columns: 72px 1fr; gap: 6px 12px; margin: 0 0 10px; }
-  .detail dt { color: var(--muted); font-size: 12px; }
-  .detail dd { margin: 0; font-size: 13px; word-break: break-all; }
+  .detail dl { display: grid; grid-template-columns: 62px 1fr; gap: 5px 12px; margin: 0; }
+  .detail dt { color: var(--faint); font-size: 11.5px; }
+  .detail dd { margin: 0; font-size: 12.5px; word-break: break-word; }
   .detail code {
-    font: 12px/1.5 ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+    font: 11.5px/1.5 var(--mono);
     background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
   }
   .why { color: var(--planned); }
   .why.failed { color: var(--fail); }
-  a { color: var(--accent); }
-  .empty { padding: 48px 12px; text-align: center; color: var(--muted); }
-  footer { margin-top: 40px; color: var(--muted); font-size: 12px; }
-  code.k { color: var(--muted); }
-  @media (max-width: 720px) {
-    .head, .row { grid-template-columns: 22px 1fr 46px; }
-    .head .hide, .row .hide { display: none; }
-    .detail { padding-left: 12px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { padding: 48px 6px; text-align: center; color: var(--faint); }
+  footer { margin-top: 32px; color: var(--faint); font-size: 11.5px; }
+  code.k { font-family: var(--mono); color: var(--dim); }
+
+  /* วงแหวนโฟกัสสำหรับผู้ใช้คีย์บอร์ด แต่ไม่โผล่ตอนคลิกเมาส์ */
+  .chip:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .row:focus-visible { border-radius: 4px; }
+
+  @media (max-width: 680px) {
+    /* ซ่อนคอลัมน์สถานะแล้วเหลือ 4 ช่อง - จึงต้องมี grid 4 คอลัมน์ให้ตรงกัน
+       ไม่งั้นช่องสุดท้ายจะล้มไปตกแถวใหม่แล้วหัวตารางจะเลื่อนไม่ตรงแถว */
+    .panel { position: static; }
+    .head, .row { grid-template-columns: 12px 66px 1fr 46px; }
+    .hide { display: none; }
+    .name { white-space: normal; overflow: visible; }
+    .detail { padding-left: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>bWAPP &mdash; ผลการทดสอบความปลอดภัย</h1>
-    <div class="sub">สร้างเมื่อ $($data.generated) &middot; เป้าหมาย <code class="k">$($data.baseUrl)</code></div>
+    <h1>bWAPP <span>ผลการทดสอบความปลอดภัย</span></h1>
+    <div class="sub">$($data.generated) &middot; $($data.baseUrl)</div>
   </header>
 
-  <div class="stats">
-    <div class="stat"><b>$($data.total)</b><span>เคสทั้งหมด</span></div>
-    <div class="stat pass"><b>$($data.pass)</b><span>ผ่าน</span></div>
-    <div class="stat fail"><b>$($data.fail)</b><span>ไม่ผ่าน</span></div>
-    <div class="stat planned"><b>$($data.planned)</b><span>ข้าม (planned)</span></div>
+  <div class="meter">
+    <i class="pass" style="width:$pctPass%"></i>
+    <i class="fail" style="width:$pctFail%"></i>
+    <i class="planned" style="width:$pctPlanned%"></i>
+  </div>
+  <div class="tally">
+    <span><b>$($data.total)</b> เคส</span>
+    <span class="pass"><b>$($data.pass)</b> ผ่าน</span>
+    <span class="fail"><b>$($data.fail)</b> ไม่ผ่าน</span>
+    <span class="planned"><b>$($data.planned)</b> ข้าม</span>
   </div>
 
-  <div class="bar" id="verdicts">
-    <button class="chip" data-v="ALL" aria-pressed="true">ทั้งหมด</button>
-    <button class="chip" data-v="PASS" aria-pressed="false">ผ่าน</button>
-    <button class="chip" data-v="FAIL" aria-pressed="false">ไม่ผ่าน</button>
-    <button class="chip" data-v="PLANNED" aria-pressed="false">ข้าม (planned)</button>
-  </div>
-  <div class="bar">
-    <button class="chip" data-file="ALL" aria-pressed="true">ทุกไฟล์</button>
-$(($files | ForEach-Object { "    <button class=`"chip`" data-file=`"$_`" aria-pressed=`"false`">$_</button>" }) -join "`n")
-    <span class="spacer"></span>
-    <input type="search" id="q" placeholder="ค้นหาด้วย id, ชื่อ หรือ URL" autocomplete="off">
-  </div>
+  <div class="panel">
+    <div class="filters">
+      <div class="grp" id="verdicts">
+        <button class="chip" data-v="ALL" aria-pressed="true">ทั้งหมด</button>
+        <button class="chip" data-v="PASS" aria-pressed="false">ผ่าน</button>
+        <button class="chip" data-v="FAIL" aria-pressed="false">ไม่ผ่าน</button>
+        <button class="chip" data-v="PLANNED" aria-pressed="false">ข้าม</button>
+      </div>
+      <div class="grp">
+        <button class="chip" data-file="ALL" aria-pressed="true">ทุกไฟล์</button>
+$(($files | ForEach-Object { "        <button class=`"chip`" data-file=`"$_`" aria-pressed=`"false`">$_</button>" }) -join "`n")
+      </div>
+      <input type="search" id="q" placeholder="ค้นหา id, ชื่อ หรือ URL" autocomplete="off">
+    </div>
 
-  <div class="head">
-    <span></span><span>id</span><span>ชื่อเทสต์</span>
-    <span class="num hide">สถานะ</span><span class="num hide">ขนาด</span><span class="num">มิลลิวินาที</span>
+    <div class="head">
+      <span></span><span>id</span><span>ชื่อเทสต์</span>
+      <span class="num hide">สถานะ</span><span class="num" title="มิลลิวินาที">ms</span>
+    </div>
   </div>
   <div id="list"></div>
   <div class="empty" id="empty" hidden>ไม่พบเคสที่ตรงกับตัวกรอง</div>
 
-  <footer>
-    สร้างโดย <code class="k">scripts\New-Dashboard.ps1</code> จาก <code class="k">evidence\results.json</code><br>
-    คลิกแถวเพื่อดู URL, เหตุผล และลิงก์ไปยังไฟล์หลักฐาน
-  </footer>
+  <footer>คลิกแถวเพื่อดู URL, เหตุผล และลิงก์ไปยังไฟล์หลักฐาน &middot; สร้างโดย <code class="k">scripts\New-Dashboard.ps1</code></footer>
 </div>
 
 <script>
@@ -242,10 +287,11 @@ function matches(r) {
 }
 
 function detail(r) {
-  const p = PALETTE[r.Verdict] || PALETTE.SKIP;
   let html = '<dl>';
   if (r.Method) html += '<dt>วิธี</dt><dd><code>' + esc(r.Method) + '</code></dd>';
   if (r.Url)    html += '<dt>URL</dt><dd><code>' + esc(r.Url) + '</code></dd>';
+  html += '<dt>ผลลัพธ์</dt><dd><code>' + esc(r.Status) + '</code> &middot; ' + bytes(r.Bytes)
+        + ' &middot; ' + (r.Ms || '-') + ' ms</dd>';
   if (r.Note) {
     const bad = r.Verdict === 'FAIL';
     html += '<dt>' + (bad ? 'ไม่ผ่านเพราะ</dt><dd class="why failed">' : 'เหตุผล</dt><dd class="why">')
@@ -264,11 +310,10 @@ function render() {
     const s = splitId(r.Id);
     return '<div class="row ' + p.cls + '" data-i="' + i + '" role="button" tabindex="0"'
          + ' title="' + esc(s.title) + '">'
-         + '<span class="dot ' + p.cls + '"></span>'
+         + '<span class="dot ' + p.cls + '" aria-label="' + esc(p.label) + '"></span>'
          + '<span class="id">' + esc(s.code) + '</span>'
          + '<span class="name">' + esc(s.title) + '</span>'
          + '<span class="num hide">' + esc(r.Status) + '</span>'
-         + '<span class="num hide">' + bytes(r.Bytes) + '</span>'
          + '<span class="num">' + (r.Ms || '-') + '</span>'
          + '</div><div class="detail">' + detail(r) + '</div>';
   }).join('');
@@ -296,7 +341,7 @@ function wire(sel, attr, set) {
   });
 }
 wire('#verdicts .chip', 'v', v => verdict = v);
-wire('.bar .chip[data-file]', 'file', f => file = f);
+wire('.chip[data-file]', 'file', f => file = f);
 q.addEventListener('input', render);
 
 render();

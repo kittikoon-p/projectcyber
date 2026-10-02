@@ -8,7 +8,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$BaseUrl = 'http://localhost:8080',
+    [string]$BaseUrl = 'http://localhost:8443',
     [int]$SecurityLevel = 0,
     [switch]$SaveEvidence
 )

