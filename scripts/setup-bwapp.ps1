@@ -39,6 +39,8 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 
+. (Join-Path $PSScriptRoot 'Set-RestClientVars.ps1')
+
 function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Ok($msg) { Write-Host "    ok: $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "    !! $msg" -ForegroundColor Yellow }
@@ -276,16 +278,40 @@ else { Warn "การเข้าสู่ระบบไม่คืน sessio
 
 if ($sid) {
     Ok "PHPSESSID=$sid"
-    $envFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'http-client.env'
+    $root = Split-Path $PSScriptRoot -Parent
+    # ไฟล์ env อ่านได้ด้วยตัวรัน PowerShell ของโปรเจกต์นี้เท่านั้น REST Client
+    # ไม่รู้จักไฟล์นี้ ตัวแปรจริง ๆ ต้องอยู่ใน .vscode/settings.json (ดู Set-RestClientVars.ps1)
+    $envFile = Join-Path $root 'http\http-client.env'
+    # ไฟล์นี้อยู่ใน .gitignore จึงไม่มีมาใน clone ใหม่ ถ้ายังไม่มีต้องสร้างจากเทมเพลตก่อน
+    if (-not (Test-Path $envFile)) {
+        $envExample = Join-Path $root 'http\http-client.env.example'
+        if (Test-Path $envExample) {
+            Copy-Item $envExample $envFile
+            Ok "สร้าง http\http-client.env จากเทมเพลตแล้ว"
+        }
+    }
     if (Test-Path $envFile) {
-        $text = Get-Content $EnvFile
+        $text = Get-Content $EnvFile -Encoding UTF8
         $text = $text -replace '(?m)^@baseUrl\s*=.*$', "@baseUrl = http://127.0.0.1:$Port"
         $text = $text -replace '(?m)^@session\s*=.*$', "@session = $sid"
         $text = $text -replace '(?m)^@authCookie\s*=.*$', "@authCookie = PHPSESSID=$sid; security_level=0"
         [System.IO.File]::WriteAllText($envFile, ($text -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
-        Ok "เขียน session ที่ใช้งานได้ลงใน http-client.env แล้ว"
+        Ok "เขียน session ที่ใช้งานได้ลงใน http\http-client.env แล้ว"
     }
 } else { Warn "ไม่พบ PHPSESSID ที่ใช้ได้ - ให้รันชุดเทสต์และส่ง -UpdateEnv เพื่อรีเฟรชค่า" }
+
+# REST Client อ่านตัวแปรจาก .vscode/settings.json เท่านั้น ต้องเขียนทุกครั้งที่ล็อกอินใหม่
+# ตัวแปรที่เหลือมาจากค่าเริ่มต้นของ bWAPP ไม่ต้องอ่านจากไฟล์ env ก็ได้
+$rcFile = Set-RestClientVars -Root (Split-Path $PSScriptRoot -Parent) -Vars @{
+    baseUrl       = "http://127.0.0.1:$Port"
+    session       = $sid
+    authCookie    = "PHPSESSID=$sid; security_level=0"
+    securityLevel = '0'
+    bwappUser     = 'bee'
+    bwappPass     = 'bug'
+    beeHash       = '6885858486f31043e5839c735d99457f045affd0'
+}
+Ok "เขียนตัวแปรสำหรับ REST Client ลงใน $([System.IO.Path]::GetFileName($rcFile)) แล้ว (เลือก No Environment)"
 
 # ---------------------------------------------------------------- สรุปผล (summary)
 $hash = ''
@@ -299,5 +325,6 @@ Write-Host ""
 Write-Host "  bWAPP พร้อมใช้งานที่  http://127.0.0.1:$Port" -ForegroundColor Green
 Write-Host "  ข้อมูลเข้าสู่ระบบ   bee / bug   (SHA1 ที่เก็บไว้: $(if ($hash) { $hash } else { 'ไม่มีข้อมูล' }))" -ForegroundColor Gray
 Write-Host "  รันชุดเทสต์        .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -UpdateEnv" -ForegroundColor Gray
+Write-Host "  ส่งจาก VS Code      เปิดโฟลเดอร์นี้เป็น workspace แล้วเลือก No Environment ที่มุมบนขวา" -ForegroundColor Gray
 Write-Host "  เริ่มต้นใหม่        .\scripts\setup-bwapp.ps1 -Reset" -ForegroundColor Gray
 Write-Host ""

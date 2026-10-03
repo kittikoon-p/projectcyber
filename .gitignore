@@ -8,9 +8,11 @@ evidence/
 #   .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -SaveEvidence -Dashboard
 dashboard.html
 
-# ตัวแปรร่วมสำหรับไฟล์ .http เมื่อล็อกอินแล้วจะเก็บ PHPSESSID ที่ยังใช้งานได้
-# จึงต้องไม่เก็บไว้ใน git คัดลอก http-client.env.example เพื่อเริ่มต้นใช้งาน แม้ไม่มีไฟล์นี้
-# ตัวรันก็ยังทำงานได้ เพราะค่าเริ่มต้นถูกฝังไว้ในตัวโปรแกรมแล้ว
+# ตัวแปรร่วมสำหรับตัวรัน PowerShell ของโปรเจกต์นี้ เมื่อล็อกอินแล้วจะเก็บ PHPSESSID ที่ยังใช้งานได้
+# จึงต้องไม่เก็บไว้ใน git คัดลอก http/http-client.env.example เพื่อเริ่มต้นใช้งาน
+# (setup-bwapp.ps1 สร้างให้เองจากเทมเพลตนี้ถ้ายังไม่มี) ตัวรันก็ยังทำงานได้แม้ไม่มีไฟล์นี้
+# เพราะค่าเริ่มต้นถูกฝังไว้ในตัวโปรแกรมแล้ว
+# แต่ REST Client ไม่อ่านไฟล์นี้ - มันอ่านได้จาก .vscode/settings.json เท่านั้น
 http-client.env
 
 # ไฟล์ใด ๆ ที่ security lab อัปโหลดเข้าไปในคอนเทนเนอร์ เผื่อวันหนึ่งมันถูก bind-mount
@@ -18,6 +20,8 @@ images/shell.php
 *.php.bak
 
 # ไฟล์ขยะจาก editor / ระบบปฏิบัติการ
+# .vscode/ ถูกยกเว้นเพราะเก็บตัวแปร REST Client ซึ่งมี PHPSESSID ที่ยังใช้งานได้
+# (ดู scripts/Set-RestClientVars.ps1) ถ้า clone ใหม่ต้องรัน setup-bwapp.ps1 เพื่อสร้างใหม่
 .vscode/
 .idea/
 *.swp

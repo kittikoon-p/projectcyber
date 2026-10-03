@@ -67,7 +67,10 @@ $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $Root = Split-Path $PSScriptRoot -Parent
-if (-not $EnvFile) { $EnvFile = Join-Path $Root 'http-client.env' }
+# ไฟล์ env ของโปรเจกต์นี้ ตัวรันอ่านเอง แต่ REST Client อ่านไม่ได้ - ตัวแปรสำหรับ
+# VS Code อยู่ใน .vscode/settings.json ซึ่ง Set-RestClientVars.ps1 เป็นคนเขียน
+if (-not $EnvFile) { $EnvFile = Join-Path $Root 'http\http-client.env' }
+. (Join-Path $PSScriptRoot 'Set-RestClientVars.ps1')
 $AutoLogin = -not $NoAutoLogin
 
 # ---------------------------------------------------------------- ตัวแปร
@@ -84,7 +87,7 @@ $defaults = @{
 }
 $vars = @{} + $defaults
 if (Test-Path $EnvFile) {
-    foreach ($line in Get-Content $EnvFile) {
+    foreach ($line in Get-Content $EnvFile -Encoding UTF8) {
         if ($line -match '^\s*@(\w+)\s*=\s*(.*)$') { $vars[$Matches[1]] = $Matches[2].Trim() }
     }
 }
@@ -208,6 +211,7 @@ function New-Want {
 #   EXPECT-STATUS: 200|302 / EXPECT-BODY: x / EXPECT-NOT: x / EXPECT-HEADER: x
 # และรูปแบบข้อความธรรมดาที่ชุดเทสต์เขียนไว้ เช่น
 #   Expected: 200, body contains "marker"
+#   Expected: 200, body ต้องมี "marker"      (รูปแบบไทยที่ไฟล์ชุดเทสต์นี้ใช้)
 function Add-Hint($want, [string]$text) {
     if ($text -match '^EXPECT-STATUS:\s*(\S+)') { $want.Status = @($Matches[1] -split '\|'); return }
     if ($text -match '^EXPECT-BODY:\s*(.+)$') { $want.Body += $Matches[1].Trim(); return }
@@ -217,6 +221,11 @@ function Add-Hint($want, [string]$text) {
     if ($text -match '^SKIP\b') { $want.Skip = $true; return }
     # สำรองสำหรับรูปแบบข้อความ: ห้ามเขียนทับบรรทัด EXPECT-* ที่ระบุชัดเจนในฟิลด์เดียวกัน
     if ($text -match 'Expected:\s*(\d{3})' -and -not $want.Status) { $want.Status = @($Matches[1]) }
+    # รูปแบบข้อความภาษาไทยที่ไฟล์ชุดเทสต์นี้ใช้: body ต้องมี "..." / body ต้องไม่มี "..."
+    # ต้องอยู่ก่อนรูปแบบอังกฤษ เพราะทั้งสองรูปแบบใช้เครื่องหมายคำพูดเหมือนกัน
+    if ($text -match 'body ต้องไม่มี\s+"([^"]+)"') { $want.Not += $Matches[1]; return }
+    if ($text -match 'body ต้องมี\s+"([^"]+)"') { $want.Body += $Matches[1]; return }
+    # รูปแบบข้อความอังกฤษ ยังรองรับไว้เผื่อไฟล์เก่า
     if ($text -match 'body (?:must )?contains\s+"([^"]+)"') { $want.Body += $Matches[1] }
     if ($text -match 'body must not contain\s+"([^"]+)"') { $want.Not += $Matches[1] }
 }
@@ -233,7 +242,10 @@ function Read-HttpFile {
     $cur = $null
     $mode = $null
 
-    foreach ($raw in Get-Content $Path) {
+    # -Encoding UTF8 บังคับให้อ่านเป็น UTF-8 ไม่งั้นคำอธิบายภาษาไทยในไฟล์ .http
+    # จะกลายเป็นตัวอักษรมั่ว เพราะ PowerShell 5.1 ตอนไม่ระบุ encoding
+    # จะใช้ code page ของระบบ (cp874 บนเครื่องไทย)
+    foreach ($raw in Get-Content $Path -Encoding UTF8) {
         $line = $raw
 
         if ($line -match '^\s*###') {
@@ -353,6 +365,8 @@ foreach ($f in $File) {
         $id = if ($r.Id) { "$($r.Id)" } else { "$name-$n" }
         $id = ($id -replace '\s+', ' ').Trim()
         if ($id.Length -gt 52) { $id = $id.Substring(0, 52) }
+        # รหัสเทสต์สั้น ๆ (เช่น SQLI-01) ใช้เป็นชื่อไฟล์หลักฐาน เพื่อให้ชื่อไฟล์ไม่ผูกกับภาษาของหัวข้อ
+        $code = if ($id -cmatch '^([A-Z]{2,}-\d+)') { $Matches[1] } else { "$name-$n" }
         if ($Only -and $id -notmatch $Only) { continue }
 
         $headers = @{}
@@ -431,9 +445,9 @@ foreach ($f in $File) {
             $verdict, $id, $r.Method, ($url -replace [regex]::Escape($vars['baseUrl']), ''), $res.Body.Length, $res.Ms, $loc, $note)
 
         # ชื่อไฟล์หลักฐานถูกคำนวณก่อนบันทึกผล เพื่อให้ dashboard ผูกไปยังไฟล์เดียวกันได้
-        $safe = ($id -replace '[^A-Za-z0-9._-]', '_')
-        if ($safe.Length -gt 70) { $safe = $safe.Substring(0, 70) }
-        $evidenceName = "$name__$safe.txt"
+        # ใช้รหัสเทสต์เป็นชื่อไฟล์ ไม่ใช้หัวข้อ เพราะหัวข้อเป็นภาษาไทยแล้ว
+        # การกรองอักษรที่ไม่ใช่ ASCII จะทำให้ได้ชื่ออย่าง INFO-01______________ ซึ่งอ่านยาก
+        $evidenceName = "$($name)__$code.txt"
 
         [void]$results.Add([pscustomobject]@{
             File = $name; Id = $id; Method = $r.Method; Url = $url; Status = $res.Status
@@ -474,13 +488,22 @@ if ($fail) {
 if ($UpdateEnv) {
     if (-not $liveSession) { Write-Output "UPDATE-ENV: ไม่พบ PHPSESSID ที่ใช้งานได้จริงในรอบนี้" }
     else {
-        $text = Get-Content $EnvFile
+        $text = Get-Content $EnvFile -Encoding UTF8
         $text = $text -replace '(?m)^@session\s*=.*$', "@session = $liveSession"
         if (-not ($text -match '(?m)^@session\s*=')) { $text += "`n@session = $liveSession" }
         $text = $text -replace '(?m)^@authCookie\s*=.*$', "@authCookie = PHPSESSID=$liveSession; security_level=0"
         [System.IO.File]::WriteAllText($EnvFile, ($text -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
         Write-Output "UPDATE-ENV: เขียน PHPSESSID $liveSession ลงใน $([System.IO.Path]::GetFileName($EnvFile))"
     }
+}
+
+# เขียน .vscode/settings.json ทุกครั้งที่มี session ใช้งานได้ ไม่ต้องรอ -UpdateEnv
+# เพราะไฟล์นี้คือช่องทางเดียวที่ REST Client รู้จัก ถ้าไม่มี {{baseUrl}} จะหลุด
+if ($liveSession) {
+    $vars['session'] = $liveSession
+    $vars['authCookie'] = "PHPSESSID=$liveSession; security_level=0"
+    $rcFile = Set-RestClientVars -Root $Root -Vars $vars
+    Write-Output "REST-CLIENT: เขียนตัวแปรลง .vscode\settings.json แล้ว (ถ้า VS Code ยังไม่เห็น ให้ Reload Window)"
 }
 
 # ---------------------------------------------------------------- results.json

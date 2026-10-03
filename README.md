@@ -38,6 +38,45 @@ TOTAL: 122   PASS: 117   FAIL: 0   SKIP/PLANNED: 5   decided: 95.9%
 ถ้าชอบใช้ Compose: `docker compose up -d` แล้วรัน `setup-bwapp.ps1` โดยไม่ใส่
 `-Reset` - ตรรกะการ seed เหมือนกันทุกประการ
 
+## ส่ง request เองจาก VS Code (REST Client)
+
+ตัวรัน PowerShell ไม่จำเป็น - ส่งด้วยมือในไฟล์ `http/*.http` ได้เช่นกัน
+
+1. ติดตั้งส่วนขยาย **REST Client** (`humao.rest-client`)
+2. เปิดโฟลเดอร์นี้เป็น workspace แล้วรัน `.\scripts\setup-bwapp.ps1` ให้เสร็จก่อน
+   คำสั่งนี้จะเขียนตัวแปรที่ REST Client ใช้ลง `.vscode/settings.json` ให้เอง
+3. เลือก **No Environment** ที่มุมบนขวาของหน้าต่าง REST Client
+4. กด **Send** ที่คำขอในไฟล์ `.http`
+
+### ทำไมตัวแปรต้องอยู่ใน .vscode/settings.json
+
+REST Client **ไม่อ่านไฟล์ env ใด ๆ ทั้งสิ้น** - ไม่ใช่ `http-client.env`
+ไม่ใช่ `.env` และไม่ไล่หาไฟล์จากโฟลเดอร์ไหนทั้งนั้น ตัวแปรที่มันรู้จักมีสามทางเท่านั้น
+
+| ทาง | รูปแบบ | หมายเหตุ |
+| --- | --- | --- |
+| file variable | `@name = value` | ต้องประกาศ**ภายในไฟล์ `.http` ที่เปิดอยู่** เท่านั้น |
+| system variable | `{{$dotenv x}}`, `{{$processEnv x}}` | อ่านไฟล์ชื่อ `.env` หรือ env ของ process |
+| environment variable | `{{name}}` | อ่านจาก setting `rest-client.environmentVariables` |
+
+ถ้าไม่มีทางใด ตัวแปรจะถูกทิ้งไว้เป็นข้อความ `{{baseUrl}}` ตรง ๆ ในบรรทัดคำขอ
+URL จึงไม่มี host/port และทุกคำขอจะล้มด้วย `ECONNREFUSED` ข้อความแบบ
+"The connection was rejected ... Details: RequestError" **ไม่ได้แปลว่า service ตาย**
+แปลว่า REST Client แทนค่าไม่ได้และไปต่อที่ปลายทางผิดที่
+
+`scripts/Set-RestClientVars.ps1` เป็นคนเขียนตัวแปรทั้งหมดลง `.vscode/settings.json`
+ใต้คีย์ `$shared` ซึ่งอ่านได้แม้ไม่ต้องเลือก environment ใด ๆ (เลือก `No Environment`)
+ทั้ง `setup-bwapp.ps1` และ `Run-HttpFile.ps1` เรียกฟังก์ชันนี้ทุกครั้งที่ล็อกอินใหม่
+จึงไม่ต้องแก้ไฟล์ `.http` แม้แต่ไฟล์เดียว และ `.vscode/` อยู่ใน `.gitignore` โดยตั้งใจ
+เพราะไฟล์นี้เก็บ `PHPSESSID` ที่ยังใช้งานได้
+
+### เซสชันหมดอายุ
+
+REST Client เข้าสู่ระบบให้เองไม่ได้ ต่างจาก `Run-HttpFile.ps1`
+ถ้า `@authCookie` ใน `.vscode/settings.json` หมดอายุ ให้สั่ง
+`.\scripts\Run-HttpFile.ps1 -File 'http\*.http' -UpdateEnv` ซึ่งจะเขียนค่าใหม่ให้ทั้งสองไฟล์
+(อย่ารันเฉพาะ `http\00-auth.http` เพราะไฟล์นั้นจบด้วย `logout.php` ซึ่งทำลาย session ทิ้ง)
+
 ## สิ่งที่สคริปต์ setup แก้ไข
 
 image `raesene/bwapp:latest` สตาร์ตได้ แต่ถ้านำมาใช้ตามสภาพจะไม่ทำงาน:
@@ -48,7 +87,7 @@ image `raesene/bwapp:latest` สตาร์ตได้ แต่ถ้าน�
 | SQLite ไม่มี `AUTO_INCREMENT` ทำให้ `blog.id` ไม่ถูกกำหนดค่าอัตโนมัติ และ INSERT ครั้งที่สองชนกันที่ `id 0` | คืน `AUTO_INCREMENT` ให้คอลัมน์ที่เป็น primary key แบบ integer คอลัมน์เดียว |
 | ผู้ใช้ฐานข้อมูลของแอปมองไม่เห็นตารางที่ import มา | `GRANT ALL ON bWAPP.*` |
 | `images/`, `documents/` และ `logs/` เป็น read-only สำหรับ `www-data` ทำให้ยืนยันช่องโหว่ file upload ไม่ได้ | `chmod 0777` ทั้งสามโฟลเดอร์ |
-| ยังไม่มี session ที่ใช้ได้สำหรับชุดเทสต์ | เข้าสู่ระบบในชื่อ `bee`, ตรวจสอบ 302 แล้วเขียน `PHPSESSID` ที่ใช้งานได้ลงใน `http-client.env` |
+| ยังไม่มี session ที่ใช้ได้สำหรับชุดเทสต์ | เข้าสู่ระบบในชื่อ `bee`, ตรวจสอบ 302 แล้วเขียน `PHPSESSID` ที่ใช้งานได้ลงใน `http/http-client.env` |
 
 สคริปต์เป็น idempotent: รันสองครั้ง ครั้งที่สองจะรายงานว่า `schema already present`
 และไม่แก้อะไรเลย
@@ -56,11 +95,16 @@ image `raesene/bwapp:latest` สตาร์ตได้ แต่ถ้าน�
 ## โครงสร้างโปรเจกต์
 
 ```
-http-client.env            ตัวแปรร่วมสำหรับไฟล์ .http (อยู่ใน .gitignore;
-                           http-client.env.example คือเทมเพลตที่ track ไว้)
+http/http-client.env        ตัวแปรร่วมสำหรับตัวรัน PowerShell ของโปรเจกต์นี้
+                           (อยู่ใน .gitignore; http/http-client.env.example คือเทมเพลต
+                           ที่ track ไว้) REST Client ไม่อ่านไฟล์นี้ - ดู .vscode/settings.json
+.vscode/settings.json       ตัวแปรชุดเดียวกันสำหรับ VS Code REST Client อยู่ใต้คีย์
+                           $shared (อยู่ใน .gitignore เพราะเก็บ PHPSESSID ที่ยังใช้ได้)
+                           เขียนโดย scripts/Set-RestClientVars.ps1
 http/*.http                ชุดเทสต์ - HTTP ล้วน ไม่พึ่งเฟรมเวิร์กใด
 scripts/setup-bwapp.ps1    สร้างแล็บขึ้นมาจากศูนย์
 scripts/Run-HttpFile.ps1   ตัว parse, ส่ง, ตรวจสอบ และสรุปผลของไฟล์ .http
+scripts/Set-RestClientVars.ps1  เขียนตัวแปรลง .vscode/settings.json ให้ REST Client
 scripts/validate.ps1       ตัวตรวจสอบแบบ batch รุ่นเก่า เก็บไว้เป็นมุมมองที่สอง
 scripts/probe.ps1          ยิง request เดี่ยว ๆ ที่ล็อกอินแล้ว เอาไว้เดิ
 scripts/New-Dashboard.ps1  สร้าง dashboard.html จากผลรอบล่าสุด
@@ -160,7 +204,8 @@ title=' AND 1=2 AND title='&action=search
 -Only 'SQLI-*'          # กรองตาม test id
 -SaveEvidence           # เขียนทุก response ลง evidence/
 -ShowBody               # แสดง body ของเคสที่ fail
--UpdateEnv              # เขียน session ที่ใช้งานได้กลับลง http-client.env
+-UpdateEnv              # เขียน session ที่ใช้งานได้กลับลง http/http-client.env
+                        # (.vscode/settings.json ถูกเขียนให้ทุกรอบอยู่แล้ว ไม่ต้องใช้ flag นี้)
 -ReportOnly             # พิมพ์ผลรอบก่อนหน้าอีกครั้งโดยไม่ยิง request
 -NoAutoLogin            # ใช้ session ที่มีอยู่ใน env file
 ```
@@ -223,13 +268,21 @@ image นี้เต็มไปด้วย RCE, SQL injection และ LFI �
 แต่ละไฟล์มี request ที่ส่งและ response เต็ม ทำให้ตรวจสอบข้อค้นพบซ้ำได้โดยไม่ต้องรันอะไรใหม่:
 
 ```powershell
-Get-Content .\evidence\INFO-01_CRITICAL___admin__publishes_the_credentials_.txt -TotalCount 40
+Get-Content .\evidence\08-info-disclosure__INFO-01.txt -TotalCount 40
 ```
 
 ## ภาษา
 
-เอกสารและคอมเมนต์ในโค้ดเป็นภาษาไทย แต่ชื่อเทสต์ในไฟล์ `.http` คงเป็นภาษาอังกฤษ
-โดยตั้งใจ เพราะ runner ใช้ชื่อเทสต์ไปสร้างชื่อไฟล์ใน `evidence/` และใช้เป็น
-test id ในการกรองด้วย `-Only` ถ้าเป็นภาษาไทย ตัวกรอง
-`[^A-Za-z0-9._-]` ใน `Run-HttpFile.ps1` จะแปลงอักขระทั้งหมดเป็น `_`
-ทำให้ชื่อไฟล์อ่านไม่ออก
+เอกสาร คอมเมนต์ และหัวข้อของเทสต์ในไฟล์ `.http` เป็นภาษาไทย
+รหัสเทสต์ (เช่น `SQLI-01` `INFO-08` `BOOT-02`) ยังคงเป็นตัวอักษรละติน
+ตัวพิมพ์ใหญ่ต่อท้ายด้วยตัวเลข เพื่อให้กรองด้วย `-Only` ได้ และเพื่อให้
+ชื่อไฟล์ใน `evidence/` อ่านได้ ตัวรันจะตัดรหัสนี้ออกมาจากหัวข้อแล้วใช้เป็น
+ชื่อไฟล์หลักฐานรูปแบบ `<ไฟล์>__<รหัสเทสต์>.txt` เช่น
+`08-info-disclosure__INFO-01.txt` หัวข้อภาษาไทยจึงไม่กระทบชื่อไฟล์
+
+คำเหล่านี้ต้องคงเป็นภาษาอังกฤษ เพราะเป็นสัญญาระหว่างไฟล์กับตัวรัน:
+`EXPECT-STATUS:` `EXPECT-BODY:` `EXPECT-NOT:` `EXPECT-HEADER:`
+`EXPECT-TIME-AT-LEAST:` `SKIP` และ `Expected:` ขณะที่การยืนยันผลจากเนื้อหา
+response เขียนได้ทั้งแบบไทย `body ต้องมี "..."` / `body ต้องไม่มี "..."`
+และแบบอังกฤษ `body contains "..."` / `body must not contain "..."`
+สตริงที่อยู่ในเครื่องหมายคำพูดต้องเป็นข้อความตามที่แอปตอบจริง ห้ามแปล

