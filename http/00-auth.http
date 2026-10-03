@@ -1,57 +1,50 @@
 ### ============================================================================
 ### 00 - Authentication & session bootstrap
 ### ============================================================================
-### ไฟล์อื่นใน http/ ทุกไฟล์ต้องมี PHPSESSID ที่ใช้งานได้ ให้รันไฟล์นี้ก่อนเสมอ
+### Every other file in http/ needs a valid PHPSESSID. Run this file first.
 ###
-###   bWAPP เก็บรหัสผ่านแบบ:  hash("sha1", $password)  -> login.php:36
-###   บัญชีที่ตั้งไว้ล่วงหน้า:  bee / bug            -> admin/settings.php
-###   (บัญชีเดียวกันนี้ถูกส่งให้โดยไม่ต้องล็อกอินที่ /admin/ - ดู 08-info-disclosure.http)
+###   bWAPP password storage:  hash("sha1", $password)  -> login.php:36
+###   static credentials:      bee / bug                -> admin/settings.php
+###   (those same credentials are served unauthenticated on /admin/ - see 08-info-disclosure.http)
 ### ============================================================================
 
 ### ---------------------------------------------------------------------------
-### BOOT-01  Baseline - เช็กว่าเป้าหมายยังตอบอยู่
+### BOOT-01  Baseline - confirm the target is alive
 ### ---------------------------------------------------------------------------
-GET {{baseUrl}}/login.php HTTP/1.1
+GET http://127.0.0.1:8443/login.php HTTP/1.1
 Host: localhost:8443
 Accept: text/html
-### Expected: 200 และมีฟอร์มล็อกอิน
+### Expected: 200 and a login form
 
 
 ### ---------------------------------------------------------------------------
-### BOOT-02  LOGIN - ดึงค่า PHPSESSID ออกมาจากหัวข้อ Set-Cookie ของ response
+### BOOT-02  LOGIN - grab the PHPSESSID from the Set-Cookie response header
 ### ---------------------------------------------------------------------------
-### ปุ่ม submit ชื่อ `form` ไม่ใช่ `login_submit` และค่า security
-### level ถูกส่งมาใน POST เดียวกัน ถ้าส่งผิดจะได้หน้า login
-### กลับมาพร้อมสถานะ 200 โดยไม่มี error ซึ่งเป็นกรณีที่พลาดบ่อยมาก
+### The submit button is named `form`, NOT `login_submit`, and the security
+### level is submitted in the same POST. Getting this wrong silently returns
+### the login page again with a 200, which is a common false-negative.
 ###
-### response มีค่า PHPSESSID สองค่า เพราะ bWAPP เรียก
-### session_regenerate_id() เฉพาะค่าสุดเท่านั้นที่ยังใช้ได้ ค่าแรกตายแล้ว
-### และจะถูก redirect กลับไปที่ login.php ให้ก๊อปค่าสุด
-###
-### เอาค่า PHPSESSID ไปใส่ใน .vscode/settings.json เป็น "session" และ
-### "authCookie" ใต้ $shared (REST Client อ่านจากตรงนั้น) หรือใส่ใน
-### http/http-client.env เป็น @session สำหรับตัวรัน PowerShell
-### วิธีที่เร็วกว่า: .\scripts\Run-HttpFile.ps1 -File 'http\*.http' -UpdateEnv
+### Copy the PHPSESSID value into http/http-client.env as @session.
 POST {{baseUrl}}/login.php HTTP/1.1
 Host: localhost:8443
 Content-Type: application/x-www-form-urlencoded
 
 login=bee&password=bug&security_level=0&form=submit
-### Expected: 302 -> portal.php, Set-Cookie: PHPSESSID=... (สองค่า)
+### Expected: 302 -> index.php, Set-Cookie: PHPSESSID=...
 
 
 ### ---------------------------------------------------------------------------
-### BOOT-03  AUTHENTICATED BASELINE - พิสูจน์ว่า session ใช้งานได้
+### BOOT-03  AUTHENTICATED BASELINE - prove the session works
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/portal.php HTTP/1.1
 Host: localhost:8443
 Cookie: {{authCookie}}
 Accept: text/html
-### Expected: 200, หน้าเว็บแสดง "Welcome Bee" พร้อมรายการบั๊ก
+### Expected: 200, page shows "Welcome Bee" and the bug list
 
 
 ### ---------------------------------------------------------------------------
-### BOOT-04  อ่าน secret ของผู้ใช้ปัจจุบัน (ไม่มีการตรวจสิทธิ์เลย)
+### BOOT-04  Read the current user's secret (no authorization check at all)
 ###    BWAPP-AUTH-06 / A1 Broken Access Control
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/secret.php HTTP/1.1
@@ -61,8 +54,8 @@ Cookie: {{authCookie}}
 
 
 ### ---------------------------------------------------------------------------
-### BOOT-05  ตั้งค่า security level ผ่าน endpoint ของแอปเอง
-###    พิสูจน์ว่า "การป้องกัน" เป็นแค่ cookie ที่ฝั่ง client ควบคุมได้
+### BOOT-05  Set the security level via the app's own endpoint
+###    Proves the "protection" is nothing but a cookie the client controls.
 ### ---------------------------------------------------------------------------
 POST {{baseUrl}}/security_level_set.php HTTP/1.1
 Host: localhost:8443
@@ -74,7 +67,7 @@ security_level=0&form=submit
 
 
 ### ---------------------------------------------------------------------------
-### BOOT-06  ออกจากระบบ
+### BOOT-06  Logout
 ### ---------------------------------------------------------------------------
 GET {{baseUrl}}/logout.php HTTP/1.1
 Host: localhost:8443
